@@ -17,7 +17,7 @@
     balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 40, minConfidence: 50, maxPositions: 3, dailyLossPct: 4, slAtr: 1.8, tpAtr: 3 },
     aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 30, minConfidence: 40, maxPositions: 5, dailyLossPct: 8, slAtr: 1.5, tpAtr: 2.5 },
   };
-  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced' };
+  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced' };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
 
@@ -196,9 +196,38 @@
   function renderMain() {
     const tabs = [['home', 'home', 'Home'], ['markets', 'chart', 'Markets'], ['bot', 'bot', 'Auto-Trade'], ['portfolio', 'wallet', 'Portfolio'], ['profile', 'user', 'Profile']];
     app.innerHTML = `<div id="view"></div><nav class="nav"><div class="nav-inner">${tabs.map(([k, ic, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${icon(ic)}${l}</button>`).join('')}</div></nav>`;
-    $$('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; $$('.nav button').forEach(x => x.classList.toggle('on', x === b)); $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0); if (S.tab === 'markets') analyseAll(); });
+    $$('.nav button').forEach(b => b.onclick = () => goTab(b.dataset.tab));
     renderView();
   }
+  /* ---------- Navigation + Android back button ----------
+     Back closes the top sheet → returns to the previous tab → goes Home → (on Home) press twice to exit. */
+  const navStack = [];
+  function goTab(tab, fromBack = false) {
+    if (!$('#view') || tab === S.tab) return;
+    if (!fromBack) { navStack.push(S.tab); if (navStack.length > 30) navStack.shift(); }
+    S.tab = tab;
+    $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
+    $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0);
+    if (tab === 'markets') analyseAll();
+  }
+  let lastBack = 0;
+  function handleBack() {
+    const sheets = $$('.sheet-bg'); if (sheets.length) { sheets.at(-1).remove(); return; }
+    if (S.unlocked && $('#view')) {
+      while (navStack.length && navStack.at(-1) === S.tab) navStack.pop();
+      if (navStack.length) return goTab(navStack.pop(), true);
+      if (S.tab !== 'home') return goTab('home', true);
+    }
+    if (Date.now() - lastBack < 2000) { const A = window.Capacitor?.Plugins?.App; return A ? A.exitApp() : undefined; }
+    lastBack = Date.now(); toast('Press back again to exit');
+  }
+  (function setupBack() {
+    const A = window.Capacitor?.isNativePlatform?.() && window.Capacitor?.Plugins?.App;
+    if (A) { A.addListener('backButton', handleBack); return; }
+    // Browser preview / fallback: trap history so the browser back button behaves the same way
+    history.pushState({ tb: 1 }, ''); addEventListener('popstate', () => { handleBack(); history.pushState({ tb: 1 }, ''); });
+  })();
+
   function renderView() {
     const v = $('#view'); if (!v) return;
     ({ home: viewHome, markets: viewMarkets, bot: viewBot, portfolio: viewPortfolio, profile: viewProfile })[S.tab](v);
@@ -207,7 +236,8 @@
   function refreshLive() {
     if (!S.unlocked || !$('#view')) return;
     if (['home', 'markets', 'portfolio'].includes(S.tab)) renderView();
-    if (S.tab === 'bot') { const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); } }
+    if (S.tab === 'bot') { const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
+      const rd = $('#radar'); if (rd) paint(rd, radarHtml(), 'radar'); }
     const sh = $('#symsheet'); if (sh) symbolSheetUpdate();
   }
 
@@ -244,12 +274,12 @@
         <div class="gauge-wrap">${gauge(mood.score)}<div class="grow">
           <div class="sub">Bullish symbols</div><div class="title up" style="font-size:20px">${mood.bulls}</div>
           <div class="sub" style="margin-top:6px">Bearish symbols</div><div class="title down" style="font-size:20px">${mood.bears}</div>
-          <div class="sub" style="margin-top:6px">Bot: <b class="${S.bot.enabled ? 'up' : ''}">${S.bot.enabled ? 'Running' : 'Paused'}</b></div></div></div></div>
+          <div class="sub" style="margin-top:6px">Bot: <b class="${S.bot.enabled ? 'up' : ''}">${S.bot.enabled ? 'Running' : 'Paused'}</b> · ${Engine.STRATEGIES[S.bot.strategy].icon} ${Engine.STRATEGIES[S.bot.strategy].label}</div></div></div></div>
       <div class="card"><div class="row between" style="margin-bottom:10px"><div><h2 style="font-size:17px">${S.focus}</h2><div class="sub mono">${focus ? px(S.focus, focus.price) : '—'} · ${S.bot.timeframe}</div></div>
         ${focus ? `<span class="chip ${sentCls(focus.score)}">${focus.score > 0 ? '+' : ''}${focus.score} ${focus.label}</span>` : ''}</div>
         <div class="tabs-mini" id="focus">${watch().map(s => `<button class="${s === S.focus ? 'on' : ''}" data-s="${s}">${s}</button>`).join('')}</div>
         <div class="chart-box" style="margin-top:10px"><canvas id="chart" height="230"></canvas></div></div>
-      <h3>Open positions</h3><div class="card">${positionsHtml(S.positions.slice(0, 4))}</div>
+      ${posHeader('Open positions')}<div class="card">${positionsHtml(S.positions.slice(0, 4))}</div>
       <h3>Bot activity</h3><div class="card log">${S.log.slice(0, 5).map(logRow).join('') || '<div class="empty">No activity yet</div>'}</div>
     </div>`, 'home');
     bindTop();
@@ -258,6 +288,11 @@
     drawChart($('#chart'), S.focus);
   }
   const watch = () => S.bot.symbols.length ? S.bot.symbols : ['EURUSD'];
+  const isBot = p => /^TB /.test(p.comment || '');
+  const STRAT_CODE = { trend: 'T', breakout: 'B', reversion: 'R', sentiment: 'S' };
+  const CODE_STRAT = { T: 'trend', B: 'breakout', R: 'reversion', S: 'sentiment' };
+  const stratOf = p => CODE_STRAT[(p.comment || '').charAt(3)] || 'sentiment';
+  const stratChip = k => `<span class="chip">${Engine.STRATEGIES[k].icon} ${Engine.STRATEGIES[k].label}</span>`;
 
   function gauge(score) {
     const ang = (score / 100) * 90; const col = score >= 25 ? 'var(--up)' : score <= -25 ? 'var(--down)' : 'var(--warn)';
@@ -273,7 +308,7 @@
     paint(v, `<div class="screen">${topbar('Markets')}
       <div class="card"><div class="sub">Sentiment combines trend (EMA 20/50), RSI momentum, MACD, rate of change, candle flow, mean-reversion${S.newsKey ? ' and live news' : ''}. Tap a symbol for details and manual trades.</div></div>
       <div class="card">${syms.map(s => { const a = S.analysis[s]; return `<div class="list-item" data-sym="${s}" data-key="${s}" style="cursor:pointer">
-        <div class="avatar">${s.slice(0, 3)}</div><div class="grow"><div class="title">${s}</div><div class="sub">${a ? `RSI ${fmt(a.rsi, 0)} · conf ${a.confidence}%` : 'Analysing…'}</div></div>
+        <div class="avatar">${s.slice(0, 3)}</div><div class="grow"><div class="title">${s}</div><div class="sub">${a ? `${Engine.REGIME_LABEL[a.regime]} · RSI ${fmt(a.rsi, 0)} · conf ${a.confidence}%` : 'Analysing…'}</div></div>
         <div class="right"><div class="mono title">${a ? px(s, a.price) : '—'}</div>${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '▲' : a.score < 0 ? '▼' : '•'} ${a.label}</span>` : ''}</div></div>`; }).join('')}</div>
     </div>`, 'markets');
     bindTop();
@@ -293,6 +328,7 @@
     paint(body, `<div class="row between"><div><h2>${sym}</h2><div class="sub mono">${a ? px(sym, a.price) : '—'} · ATR ${a ? px(sym, a.atr) : '—'}</div></div>
       ${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '+' : ''}${a.score} · ${a.label}</span>` : ''}</div>
       <div class="chart-box" style="margin:12px 0"><canvas id="symchart" height="230"></canvas></div>
+      ${a ? (() => { const d = Engine.decide(a, S.bot.strategy, S.mood, S.bot); return `<div class="card row between" style="background:var(--card2);margin-bottom:10px"><div><div class="sub">${Engine.REGIME_LABEL[a.regime]} market · ${S.bot.strategy === 'auto' ? 'Auto picks' : 'Strategy'}</div><div class="title">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} <span class="sub">${esc(d.why)}</span></div></div><span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; })() : ''}
       ${a ? `<div class="grid3" style="margin-bottom:10px"><div class="stat"><div class="lbl">Signal</div><div class="val ${a.signal === 'BUY' ? 'up' : a.signal === 'SELL' ? 'down' : ''}">${a.signal}</div></div>
         <div class="stat"><div class="lbl">Confidence</div><div class="val">${a.confidence}%</div></div><div class="stat"><div class="lbl">RSI</div><div class="val">${fmt(a.rsi, 1)}</div></div></div>
         <div class="card" style="background:var(--card2)">${a.factors.map(f => `<div class="factor"><span class="muted">${f.key}</span><div class="bar"><i style="left:${f.v < 0 ? 50 + f.v / 2 : 50}%;width:${Math.abs(f.v) / 2}%;background:${f.v >= 0 ? 'var(--up)' : 'var(--down)'}"></i><i style="left:50%;width:1px;background:var(--muted)"></i></div><span class="mono right ${cls(f.v)}">${f.v > 0 ? '+' : ''}${f.v}</span></div>`).join('')}</div>` : '<div class="empty">Analysing…</div>'}
@@ -305,7 +341,7 @@
   async function manualTrade(sym, side, volume) {
     if (!(volume > 0)) return toast('Enter a lot size');
     if (S.conn.mode === 'mt5' && !confirm(`Place a LIVE ${side} ${volume} ${sym} order on your MT5 account?`)) return;
-    try { await placeOrder(sym, side, volume, 'TB manual'); toast(`${side} ${volume} ${sym} placed`); $('#symsheet')?.remove(); poll(); }
+    try { await placeOrder(sym, side, volume, 'Manual'); toast(`${side} ${volume} ${sym} placed`); $('#symsheet')?.remove(); poll(); }
     catch (e) { toast('Order failed: ' + e.message); }
   }
 
@@ -315,6 +351,8 @@
     v.innerHTML = `<div class="screen">${topbar('Auto-Trade')}
       <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
       ${S.conn.mode === 'mt5' ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
+      <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
+      <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
       <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
       <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${all.slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
       <h3>Strategy</h3><div class="card">
@@ -337,6 +375,8 @@
     </div>`;
     bindTop();
     $('#bottoggle').onchange = e => toggleBot(e.target.checked);
+    $$('#strat button').forEach(x => x.onclick = () => { b.strategy = x.dataset.st; save(); $$('#strat button').forEach(y => y.classList.toggle('on', y === x)); paint($('#radar'), radarHtml(), 'radar'); log(`Strategy set to ${Engine.STRATEGIES[b.strategy].label}`); });
+    bindPositions(v);
     $$('#preset button').forEach(x => x.onclick = () => { Object.assign(S.bot, RISK_PRESETS[x.dataset.k], { profile: x.dataset.k }); save(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); save(); });
@@ -346,13 +386,20 @@
   }
   const slider = (k, l, min, max, step, pre = '', suf = '') => `<div class="field"><div class="row between"><label style="margin:0 0 4px 4px">${l}</label><b class="mono" id="v_${k}">${pre}${S.bot[k]}${suf}</b></div>
     <input type="range" data-k="${k}" data-pre="${pre}" data-suf="${suf}" min="${min}" max="${max}" step="${step}" value="${S.bot[k]}"></div>`;
+  function radarHtml() {
+    return watch().map(sym => { const a = S.analysis[sym]; const d = Engine.decide(a, S.bot.strategy, S.mood, S.bot);
+      return `<div class="list-item" data-key="r${sym}"><div class="avatar">${sym.slice(0, 3)}</div><div class="grow"><div class="title">${sym} <span class="sub">${a ? Engine.REGIME_LABEL[a.regime] : '…'}</span></div>
+        <div class="sub">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} · ${esc(d.why)}${d.riskMult !== 1 && d.action !== 'HOLD' ? ` · size ×${d.riskMult}` : ''}</div></div>
+        <span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; }).join('') || '<div class="empty">Pick symbols below</div>';
+  }
   function botStatusHtml() {
-    const b = S.bot, botPos = S.positions.filter(p => (p.comment || '').startsWith('TB')).length;
+    const b = S.bot, botPos = S.positions.filter(p => isBot(p)).length;
     return `<div class="row between"><div class="row"><div class="avatar" style="background:var(--grad);color:#fff">${icon('bot')}</div><div><div class="title">Sentiment Bot</div>
       <div class="sub"><span class="dot ${b.enabled ? 'live' : ''}"></span> ${b.enabled ? 'Running' : b.pausedReason || 'Paused'} · ${S.conn.mode === 'mt5' ? 'Live MT5' : 'Paper'}</div></div></div>
       <label class="toggle"><input type="checkbox" id="bottoggle" ${b.enabled ? 'checked' : ''}><span></span></label></div>
       <div class="grid3" style="margin-top:12px"><div class="stat"><div class="lbl">Watching</div><div class="val">${b.symbols.length}</div></div>
-      <div class="stat"><div class="lbl">Bot trades</div><div class="val">${botPos}/${b.maxPositions}</div></div><div class="stat"><div class="lbl">Today</div><div class="val mono ${cls(todayPnl())}">${signed(todayPnl())}</div></div></div>`;
+      <div class="stat"><div class="lbl">Bot trades</div><div class="val">${botPos}/${b.maxPositions}</div></div><div class="stat"><div class="lbl">Today</div><div class="val mono ${cls(todayPnl())}">${signed(todayPnl())}</div></div></div>
+      ${S.positions.length ? `<button class="btn ghost" data-closeall style="margin-top:12px">${icon('x')}Close all positions (${S.positions.length})</button>` : ''}`;
   }
   async function toggleBot(on) {
     if (on && !S.bot.symbols.length) { toast('Pick at least one symbol'); $('#bottoggle').checked = false; return; }
@@ -361,7 +408,7 @@
       if (!ok || (S.profile.biometric && !(await Security.verify('Confirm to enable live auto-trading')))) { $('#bottoggle').checked = false; return; }
     }
     S.bot.enabled = on; S.bot.pausedReason = ''; save(); log(on ? `Bot started (${RISK_PRESETS[S.bot.profile]?.label || 'Custom'} profile)` : 'Bot stopped', on ? 'up' : '');
-    const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); }
+    const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
     scheduleBot(true);
   }
   const logRow = l => `<div><time>${time(l.t)}</time><span class="${l.kind}">${esc(l.msg)}</span></div>`;
@@ -379,7 +426,7 @@
         <div class="grid3"><div class="stat"><div class="lbl">Trades</div><div class="val">${h.length}</div></div><div class="stat"><div class="lbl">Avg win</div><div class="val mono up">${money(wins.length ? wins.reduce((s, d) => s + d.profit, 0) / wins.length : 0)}</div></div>
         <div class="stat"><div class="lbl">Avg loss</div><div class="val mono down">${money(h.length - wins.length ? h.filter(d => d.profit <= 0).reduce((s, d) => s + d.profit, 0) / (h.length - wins.length) : 0)}</div></div></div></div>
       <h3>Allocation</h3><div class="card">${Object.keys(exp).length ? `<div class="row">${donut(exp)}<div class="donut-legend grow">${Object.entries(exp).map(([s, vol], k) => `<div><i style="background:${pal(k)}"></i>${s}<span class="grow"></span><b class="mono">${fmt(vol)} lot</b></div>`).join('')}</div></div>` : '<div class="empty">No open exposure</div>'}</div>
-      <h3>Open positions · ${S.positions.length}</h3><div class="card">${positionsHtml(S.positions)}</div>
+      ${posHeader('Open positions · ' + S.positions.length)}<div class="card">${positionsHtml(S.positions)}</div>
       <h3>Closed trades</h3><div class="card">${h.slice(0, 30).map(d => `<div class="list-item" data-key="d${d.id}-${d.time}"><div class="avatar ${d.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
         <div class="grow"><div class="title">${d.symbol} <span class="sub">${fmt(d.volume)} lot</span></div><div class="sub">${new Date(d.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${d.reason ? ' · ' + d.reason : ''}</div></div>
         <div class="mono title ${cls(d.profit)}">${signed(d.profit)}</div></div>`).join('') || '<div class="empty">No closed trades yet</div>'}</div>
@@ -396,14 +443,56 @@
   function positionsHtml(list) {
     if (!list.length) return '<div class="empty">No open positions</div>';
     return list.map(p => `<div class="list-item" data-key="p${p.id}"><div class="avatar ${p.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
-      <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${(p.comment || '').startsWith('TB') ? ' · 🤖' : ''}</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
+      <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${isBot(p) ? ' · 🤖' : ''}</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
       <div class="right"><div class="mono title ${cls(p.profit)}">${signed(p.profit)}</div><button class="sub" data-close="${p.id}" style="color:var(--accent);font-weight:700">Close</button></div></div>`).join('');
   }
+  const posHeader = t => `<div class="row between"><h3>${t}</h3>${S.positions.length ? `<button class="btn small ghost closeall-btn" data-closeall>${icon('x')}Close all</button>` : ''}</div>`;
   function bindPositions(root) {
+    $$('[data-closeall]', root).forEach(b => b.onclick = openCloseAll);
     $$('[data-close]', root).forEach(b => b.onclick = async () => {
       if (S.conn.mode === 'mt5' && !confirm('Close this live position?')) return;
       try { await S.broker.closePosition(b.dataset.close); toast('Position closed'); log(`Closed position #${b.dataset.close} manually`); poll(); } catch (e) { toast('Close failed: ' + e.message); }
     });
+  }
+
+  /* ---------- Close all ---------- */
+  const CLOSE_FILTERS = {
+    all: ['All positions', p => true],
+    bot: ['Bot trades only', p => isBot(p)],
+    profit: ['Profitable only', p => p.profit > 0],
+    loss: ['Losing only', p => p.profit <= 0],
+  };
+  function openCloseAll() {
+    if (!S.positions.length) return toast('No open positions');
+    const row = ([k, [label, f]]) => { const list = S.positions.filter(f), pl = list.reduce((x, p) => x + p.profit, 0);
+      return `<button class="list-item close-opt" data-f="${k}" ${list.length ? '' : 'disabled'} style="width:100%;text-align:left;${list.length ? '' : 'opacity:.45'}"><div class="avatar">${list.length}</div>
+        <div class="grow"><div class="title">${label}</div><div class="sub">${list.length} position${list.length === 1 ? '' : 's'}</div></div><div class="mono title ${cls(pl)}">${signed(pl)}</div></button>`; };
+    sheet(`<h2>Close positions</h2><p class="sub">Market orders close at the current price. Floating P/L shown per group.</p>
+      <div class="card" style="padding:4px 14px">${Object.entries(CLOSE_FILTERS).map(row).join('')}</div>
+      <div class="card row between"><div><div class="title">Also stop the bot</div><div class="sub">Prevents new trades straight after closing</div></div><label class="toggle"><input type="checkbox" id="stopbot" ${S.bot.enabled ? 'checked' : ''}><span></span></label></div>
+      ${S.conn.mode === 'mt5' ? '<div class="notice">This closes <b>live</b> positions on your MT5 account.</div>' : ''}`, el => {
+      $$('.close-opt', el).forEach(b => b.onclick = async () => {
+        const [label, f] = CLOSE_FILTERS[b.dataset.f], n = S.positions.filter(f).length;
+        if (!n) return;
+        if (!confirm(`${label}: close ${n} position${n === 1 ? '' : 's'}${S.conn.mode === 'mt5' ? ' on your LIVE account' : ''}?`)) return;
+        const stop = $('#stopbot', el).checked; el.remove();
+        await closeAll(b.dataset.f, stop);
+      });
+    });
+  }
+  async function closeAll(filter = 'all', stopBot = false) {
+    if (stopBot && S.bot.enabled) { S.bot.enabled = false; S.bot.pausedReason = 'Stopped by Close all'; save(); scheduleBot(); log('Bot stopped (Close all)'); }
+    await poll();
+    const [label, f] = CLOSE_FILTERS[filter], list = S.positions.filter(f);
+    toast(`Closing ${list.length} position${list.length === 1 ? '' : 's'}…`);
+    let ok = 0, pl = 0; const fails = [];
+    for (const p of list) { // sequential: friendlier to broker/API rate limits
+      try { await S.broker.closePosition(p.id); ok++; pl += p.profit; } catch (e) { fails.push(`${p.symbol}: ${e.message}`); }
+    }
+    log(`Close all (${label.toLowerCase()}): ${ok}/${list.length} closed, ${signed(pl)}`, cls(pl));
+    if (fails.length) log('Not closed: ' + fails.join('; '), 'down');
+    toast(fails.length ? `${ok} closed, ${fails.length} failed. See the log.` : `Closed ${ok} position${ok === 1 ? '' : 's'} · ${signed(pl)}`);
+    S._histT = 0; await poll();
   }
 
   /* ---------- Profile ---------- */
@@ -578,21 +667,22 @@
     refreshLive();
   }
 
-  function lotFor(sym, a, spec) {
-    const eq = S.account.equity, risk = eq * S.bot.riskPct / 100, slDist = a.atr * S.bot.slAtr;
+  function lotFor(sym, a, spec, slMult = S.bot.slAtr, riskMult = 1) {
+    const eq = S.account.equity, risk = eq * S.bot.riskPct / 100 * riskMult, slDist = a.atr * slMult;
     let perLot = slDist * spec.contractSize; if (/^USD/.test(sym) && !/USD$/.test(sym)) perLot /= a.price; // quote not USD (e.g. USDJPY)
     let vol = risk / (perLot || 1e9);
     const step = spec.volumeStep || .01; vol = Math.floor(vol / step) * step;
     return +Math.min(Math.max(vol, spec.minVolume || .01), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
   }
-  async function placeOrder(sym, side, volume, comment) {
+  async function placeOrder(sym, side, volume, comment, opt = {}) {
+    const slM = opt.slAtr ?? S.bot.slAtr, tpM = opt.tpAtr ?? S.bot.tpAtr;
     const a = S.analysis[sym], spec = await S.broker.getSpec(sym), q = await S.broker.getPrice(sym);
     const entry = side === 'BUY' ? q.ask : q.bid, d = spec.digits ?? digits(sym), r = v => +v.toFixed(d);
     const atr = a?.atr || 0;
-    const sl = atr ? r(side === 'BUY' ? entry - atr * S.bot.slAtr : entry + atr * S.bot.slAtr) : undefined;
-    const tp = atr ? r(side === 'BUY' ? entry + atr * S.bot.tpAtr : entry - atr * S.bot.tpAtr) : undefined;
+    const sl = atr ? r(side === 'BUY' ? entry - atr * slM : entry + atr * slM) : undefined;
+    const tp = atr ? r(side === 'BUY' ? entry + atr * tpM : entry - atr * tpM) : undefined;
     const res = await S.broker.trade({ symbol: sym, side, volume, stopLoss: sl, takeProfit: tp, comment });
-    log(`${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}`, side === 'BUY' ? 'up' : 'down');
+    log(`${opt.tag ? opt.tag + ' ' : ''}${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}`, side === 'BUY' ? 'up' : 'down');
     return res;
   }
 
@@ -604,24 +694,28 @@
       // Daily loss guard
       const lossLimit = (S.dayStart?.equity || 0) * S.bot.dailyLossPct / 100;
       if (todayPnl() <= -lossLimit) { S.bot.enabled = false; S.bot.pausedReason = 'Daily loss limit hit'; save(); log(`Daily loss limit (-${S.bot.dailyLossPct}%) reached — bot paused`, 'down'); notify('Tradebot paused', 'Daily loss limit reached.'); refreshLive(); return; }
-      const mine = S.positions.filter(p => (p.comment || '').startsWith('TB'));
-      // Exits on sentiment flip
-      if (S.bot.exitOnFlip) for (const p of mine) {
+      const mine = S.positions.filter(p => isBot(p));
+      // Exits: trend/breakout/sentiment trades close when sentiment turns against them;
+      // reversion trades take profit once price returns to the middle Bollinger band.
+      for (const p of mine) {
         const a = S.analysis[p.symbol]; if (!a) continue;
-        if ((p.type === 'POSITION_TYPE_BUY' && a.signal === 'SELL') || (p.type === 'POSITION_TYPE_SELL' && a.signal === 'BUY')) {
-          await S.broker.closePosition(p.id); log(`Sentiment flipped on ${p.symbol} (${a.score}) — closed ${signed(p.profit)}`, cls(p.profit));
-        }
+        const buy = p.type === 'POSITION_TYPE_BUY', st = stratOf(p);
+        let why = '';
+        if (st === 'reversion') { if (buy ? a.bb.pctB >= .5 : a.bb.pctB <= .5) why = 'Back to mean'; }
+        else if (S.bot.exitOnFlip && (buy ? a.score <= -S.bot.threshold * .6 : a.score >= S.bot.threshold * .6)) why = `Sentiment flipped (${a.score})`;
+        if (why) { try { await S.broker.closePosition(p.id); log(`${why} on ${p.symbol}: closed ${signed(p.profit)}`, cls(p.profit)); } catch (e) { log(`Close ${p.symbol} failed: ${e.message}`, 'down'); } }
       }
       // Entries
       await poll();
-      let open = S.positions.filter(p => (p.comment || '').startsWith('TB')).length;
-      const cands = watch().map(s => [s, S.analysis[s]]).filter(([, a]) => a && a.signal !== 'HOLD' && a.confidence >= S.bot.minConfidence)
-        .sort((x, y) => Math.abs(y[1].score) - Math.abs(x[1].score));
-      for (const [s, a] of cands) {
+      let open = S.positions.filter(p => isBot(p)).length;
+      const cands = watch().map(s => [s, S.analysis[s], Engine.decide(S.analysis[s], S.bot.strategy, S.mood, S.bot)]).filter(([, , d]) => d.action !== 'HOLD')
+        .sort((x, y) => Math.abs(y[1].score) * y[2].riskMult - Math.abs(x[1].score) * x[2].riskMult);
+      for (const [s, a, d] of cands) {
         if (open >= S.bot.maxPositions) break;
         if (S.positions.some(p => p.symbol === s)) continue;
-        const vol = lotFor(s, a, await S.broker.getSpec(s));
-        try { await placeOrder(s, a.signal, vol, `TB ${a.score}`); open++; notify(`Tradebot ${a.signal} ${s}`, `${vol} lot · sentiment ${a.score} (${a.label})`); }
+        const vol = lotFor(s, a, await S.broker.getSpec(s), d.slAtr, d.riskMult);
+        const st = Engine.STRATEGIES[d.strategy];
+        try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':' }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); }
         catch (e) { log(`Order ${s} failed: ${e.message}`, 'down'); }
       }
       await poll();

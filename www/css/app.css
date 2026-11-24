@@ -212,3 +212,15 @@ canvas { display: block; width: 100%; }
 @keyframes flashUp { 0% { background: color-mix(in srgb, var(--up) 35%, transparent); } 100% { background: transparent; } }
 @keyframes flashDown { 0% { background: color-mix(in srgb, var(--down) 35%, transparent); } 100% { background: transparent; } }
 text.flash-up, text.flash-down { animation: none; }
+
+/* ===== Strategy picker ===== */
+.strat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.strat { text-align: left; background: var(--card); border: 1.5px solid var(--line); border-radius: 18px; padding: 12px 13px; display: flex; flex-direction: column; gap: 2px; transition: .2s; }
+.strat .em { font-size: 20px; line-height: 1; margin-bottom: 4px; }
+.strat b { font-size: 15px; }
+.strat small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.strat.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--card)); box-shadow: var(--glow); }
+.strat:first-child { grid-column: 1 / -1; }
+.closeall-btn { margin-top: 12px; color: var(--down); }
+.btn svg.i { width: 18px; height: 18px; }
+.close-opt:active { background: var(--card2); }

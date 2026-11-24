@@ -31,7 +31,34 @@ For every watched symbol, the engine loads 200 candles on the selected timeframe
 
 **Market mood** on the dashboard is the average score across your watch list, plus counts of bullish and bearish symbols.
 
-## 2. Entry rules
+## 2. Strategies & the Auto mode
+
+Choose a strategy in **Auto-Trade → Strategy**. Every symbol is first classified into a **regime**:
+
+| Regime | Detection |
+|---|---|
+| **Breakout** | ATR(14) > 1.2 × ATR(50) **and** price beyond the previous 20-bar high or low |
+| **Trending** | \|Trend factor\| ≥ 0.40 (EMA20/50 separation ≥ 0.6 ATR) |
+| **Ranging** | \|Trend factor\| < 0.25 |
+| **Mixed** | anything in between |
+
+| Strategy | Entry | SL / TP (× ATR) | Exit |
+|---|---|---|---|
+| 📈 **Trend** | \|score\| ≥ threshold, confidence ≥ min, trend factor agrees | SL, TP from settings | Sentiment turns against (≥ 60% of threshold) |
+| 🚀 **Breakout** | Price breaks the 20-bar high or low with score ≥ 70% of threshold in the same direction | SL × 0.85, TP × 1.25 | Same as Trend |
+| 🔄 **Reversion** | BUY: %B < 5% and RSI < 35. SELL: %B > 95% and RSI > 65 | SL × 0.7, TP × 0.45 (min 1) | Price returns to the middle Bollinger band |
+| 🧭 **Sentiment** | \|score\| ≥ threshold and confidence ≥ min | SL, TP from settings | Same as Trend |
+| ✨ **Auto** | Trending → Trend, Breakout → Breakout, Ranging → Reversion, Mixed → Sentiment (threshold +10, confidence +10) | per picked strategy | per picked strategy |
+
+**Market-mood overlay.** Market mood is the average score across the watch list. When \|mood\| ≥ 40, trades with the mood use 1.25× risk and trades against it use 0.6×. In Auto mode, non-reversion trades against a strong mood (\|mood\| ≥ 55) are skipped.
+
+Bot orders are tagged `TB <code><score>`, for example `TB T+46` (T = Trend, B = Breakout, R = Reversion, S = Sentiment). The bot uses the tag to apply the right exit rule.
+
+## 2b. Close all
+
+**Close all** (Home, Portfolio, Auto-Trade) offers **All**, **Bot trades only**, **Profitable only** or **Losing only**, showing the count and floating P/L of each group. It can also stop the bot first. Positions close one by one at market, and any failures are listed in the activity log.
+
+## 2c. Entry rules (common)
 
 A trade opens when **all** of these are true:
 1. The bot is enabled and the daily loss limit has not been hit

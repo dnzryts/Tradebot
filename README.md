@@ -29,6 +29,8 @@
 | 🔑 **Secure credentials** | MetaApi token stored in the Android Keystore via the biometric plugin. Your MT5 password is never stored on the phone |
 | 🔗 **MT5 account setup** | Connect any broker's MT5 login through [MetaApi](https://metaapi.cloud) (register a new login, or link an existing MetaApi account ID) |
 | 📈 **Market sentiment** | Per-symbol score from −100 to +100 built from 7 technical factors plus optional news sentiment, with a confidence rating and a market-mood gauge |
+| ✨ **Auto strategy** | Detects each symbol's regime and picks Trend, Breakout, Reversion or Sentiment logic, sized by the overall market mood. A live *strategy radar* shows each decision |
+| ⛔ **Close all** | One tap to close every position, or only bot trades, winners or losers, optionally stopping the bot too |
 | 🤖 **Auto-trading** | Opens trades on strong, high-confidence signals with ATR-based stop-loss and take-profit, risk-based position sizing, a max-positions cap, exit on sentiment flip, and a **daily loss limit kill-switch** |
 | 💼 **Portfolio** | Equity, balance, floating P/L, open positions (one-tap close), allocation donut, equity curve, win rate, average win and loss, closed-trade history |
 | 👤 **Profile** | Name, avatar colour, investor risk profile (Conservative, Balanced or Aggressive), PIN change, biometric toggle, data wipe |

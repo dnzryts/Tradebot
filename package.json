@@ -1,6 +1,6 @@
 {
   "name": "tradebot",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Android MT5 auto-trading app with market-sentiment analysis, portfolio tracking, fingerprint lock and themes.",
   "private": true,
   "license": "MIT",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.6.0",
     "@capacitor/local-notifications": "^8.3.0",
     "@capgo/capacitor-native-biometric": "^8.9.0"
