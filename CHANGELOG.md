@@ -11,6 +11,7 @@
 ### Changed
 - Reversion trades take profit at the middle Bollinger band. Other bot trades exit when sentiment turns against them.
 - Manual trades are no longer counted or managed as bot trades.
+- The app is no longer full screen: it sits below the status bar and above the navigation bar, with both bar areas matching the dark app background.
 
 ## [1.0.1] - 2026-11-24
 ### Fixed
