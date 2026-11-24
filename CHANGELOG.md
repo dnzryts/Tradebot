@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0] - 2026-11-25
+### Added
+- **Fixed $ targets.** Auto-Trade → Profit & loss targets → *Fixed $ amount* sets take-profit and stop-loss in dollars per trade (default +$3 / −$3). The bot sizes each lot so the target sits about TP × ATR away (within Max lot and broker limits), then sets exact SL/TP prices so the dollar result is fixed on every symbol.
+- **Basket targets.** Close all bot trades together when their combined floating P/L reaches +$X (take-profit) or −$Y (stop-loss). Works in both target modes; 0 turns it off.
+- Strategy radar and the activity log show the $ targets. Orders are skipped if a $ target is too small for the current spread.
+
 ## [1.1.3] - 2026-11-25
 ### Changed
 - Back button no longer steps through every previously visited tab. It closes an open dialog or panel, otherwise goes straight to Home; on Home, press twice to exit.

@@ -17,7 +17,7 @@
     balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 40, minConfidence: 50, maxPositions: 3, dailyLossPct: 4, slAtr: 1.8, tpAtr: 3 },
     aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 30, minConfidence: 40, maxPositions: 5, dailyLossPct: 8, slAtr: 1.5, tpAtr: 2.5 },
   };
-  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced' };
+  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced' };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
 
@@ -383,8 +383,20 @@
         ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close bot positions on an opposite signal</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
       </div>
+      <h3>Profit & loss targets</h3><div class="card" id="targets">
+        <div class="seg" id="tmode" style="margin-bottom:12px"><button data-m="atr" class="${b.targetMode === 'atr' ? 'on' : ''}">By volatility (ATR)</button><button data-m="usd" class="${b.targetMode === 'usd' ? 'on' : ''}">Fixed $ amount</button></div>
+        <div id="t_usd" class="${b.targetMode === 'usd' ? '' : 'hidden'}">
+          <div class="grid2"><div class="field"><label>Take-profit per trade</label><div class="money"><span>+$</span><input class="input mono" type="number" inputmode="decimal" min="0.5" step="0.5" data-usd="tpUsd" value="${b.tpUsd}"></div></div>
+          <div class="field"><label>Stop-loss per trade</label><div class="money"><span>−$</span><input class="input mono" type="number" inputmode="decimal" min="0.5" step="0.5" data-usd="slUsd" value="${b.slUsd}"></div></div></div>
+          <p class="hint" style="margin-top:-4px" id="t_hint">${targetHint()}</p>
+        </div>
+        <p class="hint ${b.targetMode === 'atr' ? '' : 'hidden'}" id="t_atr">Stop-loss and take-profit follow market volatility (ATR multiples set under Strategy). Lot size comes from <b>Risk per trade</b>.</p>
+        <div class="grid2" style="margin-top:12px"><div class="field"><label>Basket take-profit</label><div class="money"><span>+$</span><input class="input mono" type="number" inputmode="decimal" min="0" step="1" data-usd="basketTp" value="${b.basketTp}"></div></div>
+          <div class="field"><label>Basket stop-loss</label><div class="money"><span>−$</span><input class="input mono" type="number" inputmode="decimal" min="0" step="1" data-usd="basketSl" value="${b.basketSl}"></div></div></div>
+        <p class="hint" style="margin-top:-4px">Closes <b>all bot trades together</b> when their combined profit or loss reaches the amount. Set 0 to turn off.</p>
+      </div>
       <h3>Money management</h3><div class="card">
-        ${slider('riskPct', 'Risk per trade', .1, 5, .1, '', '% of equity')}
+        ${slider('riskPct', 'Risk per trade (ATR mode)', .1, 5, .1, '', '% of equity')}
         ${slider('maxPositions', 'Max open positions', 1, 10, 1)}
         ${slider('dailyLossPct', 'Daily loss limit (bot pauses)', .5, 20, .5, '-', '%')}
         ${slider('maxLot', 'Max lot per trade', .01, 10, .01)}
@@ -402,14 +414,20 @@
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); save(); });
     $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); });
     $('#flip').onchange = e => { b.exitOnFlip = e.target.checked; save(); };
+    $$('#tmode button').forEach(x => x.onclick = () => { b.targetMode = x.dataset.m; save(); $$('#tmode button').forEach(y => y.classList.toggle('on', y === x)); $('#t_usd').classList.toggle('hidden', b.targetMode !== 'usd'); $('#t_atr').classList.toggle('hidden', b.targetMode !== 'atr'); paint($('#radar'), radarHtml(), 'radar'); log(b.targetMode === 'usd' ? `Fixed targets on: +$${fmt(b.tpUsd)} / −$${fmt(b.slUsd)} per trade` : 'Targets follow volatility (ATR)'); });
+    $$('input[data-usd]').forEach(inp => inp.onchange = () => {
+      const k = inp.dataset.usd, min = k.startsWith('basket') ? 0 : .5; let val = Math.max(min, Math.round((+inp.value || 0) * 100) / 100);
+      inp.value = val; b[k] = val; save(); $('#t_hint').innerHTML = targetHint(); paint($('#radar'), radarHtml(), 'radar'); toast(k.startsWith('basket') ? (val ? `Basket ${k === 'basketTp' ? 'take-profit' : 'stop-loss'} $${fmt(val)}` : 'Basket target off') : `${k === 'tpUsd' ? 'Take-profit' : 'Stop-loss'} set to $${fmt(val)} per trade`);
+    });
     $('#clearlog').onclick = () => { S.log = []; store.set('log', []); $('#botlog').innerHTML = logHtml(); };
   }
   const slider = (k, l, min, max, step, pre = '', suf = '') => `<div class="field"><div class="row between"><label style="margin:0 0 4px 4px">${l}</label><b class="mono" id="v_${k}">${pre}${S.bot[k]}${suf}</b></div>
     <input type="range" data-k="${k}" data-pre="${pre}" data-suf="${suf}" min="${min}" max="${max}" step="${step}" value="${S.bot[k]}"></div>`;
+  const targetHint = () => `Each trade closes at about <b class="up">+$${fmt(S.bot.tpUsd)}</b> or <b class="down">−$${fmt(S.bot.slUsd)}</b>. The bot picks the lot size so the target sits about ${S.bot.tpAtr}× ATR away (set under Strategy), within Max lot. Spread and commission are not included.`;
   function radarHtml() {
     return watch().map(sym => { const a = S.analysis[sym]; const d = Engine.decide(a, S.bot.strategy, S.mood, S.bot);
       return `<div class="list-item" data-key="r${sym}"><div class="avatar">${sym.slice(0, 3)}</div><div class="grow"><div class="title">${sym} <span class="sub">${a ? Engine.REGIME_LABEL[a.regime] : '…'}</span></div>
-        <div class="sub">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} · ${esc(d.why)}${d.riskMult !== 1 && d.action !== 'HOLD' ? ` · size ×${d.riskMult}` : ''}</div></div>
+        <div class="sub">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} · ${esc(d.why)}${S.bot.targetMode === 'usd' ? ` · <span class="up">+$${fmt(S.bot.tpUsd)}</span>/<span class="down">−$${fmt(S.bot.slUsd)}</span>` : d.riskMult !== 1 && d.action !== 'HOLD' ? ` · size ×${d.riskMult}` : ''}</div></div>
         <span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; }).join('') || '<div class="empty">Pick symbols below</div>';
   }
   function botStatusHtml() {
@@ -723,8 +741,21 @@
       const today = new Date().toDateString();
       if (!S.dayStart || S.dayStart.day !== today) { S.dayStart = { day: today, equity: S.account.equity }; store.set('dayStart', S.dayStart); }
       if (S.conn.mode === 'mt5') S.status = 'Connected';
+      checkBasket();
     } catch (e) { S.status = 'Error'; }
     refreshLive(); ringBusy(false); ringCycle();
+  }
+  /* Basket targets: close all bot trades together at a combined $ profit or loss. */
+  function checkBasket() {
+    const b = S.bot; if (!b.enabled || S._basketBusy || !(b.basketTp > 0 || b.basketSl > 0)) return;
+    const bp = S.positions.filter(isBot); if (!bp.length) return;
+    const tot = bp.reduce((x, p) => x + p.profit, 0);
+    const hitTp = b.basketTp > 0 && tot >= b.basketTp, hitSl = b.basketSl > 0 && tot <= -b.basketSl;
+    if (!hitTp && !hitSl) return;
+    S._basketBusy = true;
+    log(`Basket ${hitTp ? 'take-profit' : 'stop-loss'} reached (${signed(tot)}): closing ${bp.length} bot trade${bp.length === 1 ? '' : 's'}`, hitTp ? 'up' : 'down');
+    notify(`Tradebot basket ${hitTp ? 'target' : 'stop'} hit`, `Closed ${bp.length} bot trades at ${signed(tot)}`);
+    closeAll('bot').finally(() => { S._basketBusy = false; });
   }
   const todayPnl = () => S.account && S.dayStart ? S.account.equity - S.dayStart.equity : 0;
 
@@ -749,15 +780,29 @@
     const step = spec.volumeStep || .01; vol = Math.floor(vol / step) * step;
     return +Math.min(Math.max(vol, spec.minVolume || .01), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
   }
+  /* Fixed-$ mode: choose a lot so the take-profit sits ~tpAtr × ATR away, then derive exact price
+     distances from that (rounded) lot so profit at TP = tpUsd and loss at SL = slUsd. */
+  function usdPlan(sym, a, spec, tpAtr = S.bot.tpAtr, lotOverride) {
+    const cs = spec.contractSize || 1, step = spec.volumeStep || .01, minV = spec.minVolume || .01;
+    const conv = (/^USD/.test(sym) && !/USD$/.test(sym)) ? a.price : 1; // quote currency not USD (e.g. USDJPY)
+    let lot = lotOverride || Math.round(S.bot.tpUsd * conv / (tpAtr * a.atr * cs) / step) * step;
+    lot = +Math.min(Math.max(lot, minV), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
+    return { lot, tpDist: S.bot.tpUsd * conv / (lot * cs), slDist: S.bot.slUsd * conv / (lot * cs) };
+  }
   async function placeOrder(sym, side, volume, comment, opt = {}) {
     const slM = opt.slAtr ?? S.bot.slAtr, tpM = opt.tpAtr ?? S.bot.tpAtr;
     const a = S.analysis[sym], spec = await S.broker.getSpec(sym), q = await S.broker.getPrice(sym);
     const entry = side === 'BUY' ? q.ask : q.bid, d = spec.digits ?? digits(sym), r = v => +v.toFixed(d);
     const atr = a?.atr || 0;
-    const sl = atr ? r(side === 'BUY' ? entry - atr * slM : entry + atr * slM) : undefined;
-    const tp = atr ? r(side === 'BUY' ? entry + atr * tpM : entry - atr * tpM) : undefined;
+    let slD = atr * slM, tpD = atr * tpM;
+    if (S.bot.targetMode === 'usd' && a) {
+      const plan = usdPlan(sym, a, spec, tpM, volume); slD = plan.slDist; tpD = plan.tpDist;
+      if (Math.min(slD, tpD) < (q.ask - q.bid) * 3) throw new Error(`$ target too small for ${sym} spread at ${volume} lot`);
+    }
+    const sl = slD ? r(side === 'BUY' ? entry - slD : entry + slD) : undefined;
+    const tp = tpD ? r(side === 'BUY' ? entry + tpD : entry - tpD) : undefined;
     const res = await S.broker.trade({ symbol: sym, side, volume, stopLoss: sl, takeProfit: tp, comment });
-    log(`${opt.tag ? opt.tag + ' ' : ''}${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}`, side === 'BUY' ? 'up' : 'down');
+    log(`${opt.tag ? opt.tag + ' ' : ''}${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}${S.bot.targetMode === 'usd' && a ? ` (+$${fmt(S.bot.tpUsd)} / −$${fmt(S.bot.slUsd)})` : ''}`, side === 'BUY' ? 'up' : 'down');
     return res;
   }
 
@@ -788,7 +833,8 @@
       for (const [s, a, d] of cands) {
         if (open >= S.bot.maxPositions) break;
         if (S.positions.some(p => p.symbol === s)) continue;
-        const vol = lotFor(s, a, await S.broker.getSpec(s), d.slAtr, d.riskMult);
+        const spec = await S.broker.getSpec(s);
+        const vol = S.bot.targetMode === 'usd' ? usdPlan(s, a, spec, d.tpAtr).lot : lotFor(s, a, spec, d.slAtr, d.riskMult);
         const st = Engine.STRATEGIES[d.strategy];
         try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':' }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); }
         catch (e) { log(`Order ${s} failed: ${e.message}`, 'down'); }

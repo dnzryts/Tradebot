@@ -270,3 +270,9 @@ html, body { overflow-x: hidden; }
 .dlg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dlg-actions .btn { padding: 13px 10px; font-size: 15px; border-radius: 14px; }
 .btn.buy { background: var(--up); box-shadow: none; }
+
+/* ===== $ input with prefix ===== */
+.money { position: relative; }
+.money span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; pointer-events: none; }
+.money .input { padding-left: 38px; font-weight: 700; }
+.hint b.up { color: var(--up); } .hint b.down { color: var(--down); }

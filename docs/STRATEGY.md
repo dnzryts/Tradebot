@@ -54,6 +54,29 @@ Choose a strategy in **Auto-Trade → Strategy**. Every symbol is first classifi
 
 Bot orders are tagged `TB <code><score>`, for example `TB T+46` (T = Trend, B = Breakout, R = Reversion, S = Sentiment). The bot uses the tag to apply the right exit rule.
 
+## 2a. Profit & loss targets
+
+**By volatility (ATR)** (default): SL and TP are ATR multiples from the strategy table above, and the lot comes from *Risk per trade* (see Position sizing).
+
+**Fixed $ amount**: you set take-profit and stop-loss in account dollars per trade.
+
+```
+lot      = round( TP$ ÷ (TP-multiple × ATR × contract size) )   → clamped to broker min/max and Max lot
+TP price = entry ± TP$ ÷ (lot × contract size)                  (× price when the quote currency isn't USD, e.g. USDJPY)
+SL price = entry ∓ SL$ ÷ (lot × contract size)
+```
+
+The lot is chosen so the target sits a sensible distance away (about the strategy's TP multiple of ATR). The exact prices are then calculated from that rounded lot, so the result at TP or SL equals your dollar amount. When the broker's minimum lot (0.01) forces a bigger lot, the target simply sits closer to the entry.
+
+Examples at +$3 / −$3 (approximate lots): EURUSD 0.02, GBPUSD 0.01, USDJPY 0.01, XAUUSD 0.01, BTCUSD 0.01, US30 0.02.
+
+Notes:
+- Spread, commission and swap are **not** included, so the net result is slightly less than the target.
+- If a target would sit closer than 3× the current spread, the order is skipped and logged.
+- Values assume a USD account. Crosses without USD (e.g. EURGBP) are treated approximately.
+
+**Basket targets** (both modes): when the combined floating P/L of all bot trades reaches **+Basket take-profit** or **−Basket stop-loss**, every bot trade is closed together. 0 = off.
+
 ## 2b. Close all
 
 **Close all** (Home, Portfolio, Auto-Trade) offers **All**, **Bot trades only**, **Profitable only** or **Losing only**, showing the count and floating P/L of each group. It can also stop the bot first. Positions close one by one at market, and any failures are listed in the activity log.
