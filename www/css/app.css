@@ -249,3 +249,24 @@ text.flash-up, text.flash-down { animation: none; }
 @keyframes enterRight { from { opacity: .3; transform: translateX(36px); } to { opacity: 1; transform: none; } }
 @keyframes enterLeft { from { opacity: .3; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
 html, body { overflow-x: hidden; }
+
+/* ===== In-app dialog ===== */
+.dlg-bg { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px;
+  background: rgba(0,0,0,0); backdrop-filter: blur(0px); transition: background .2s, backdrop-filter .2s; }
+.dlg-bg.open { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
+.dlg { width: 100%; max-width: 360px; background: var(--bg2); border: 1px solid var(--line); border-radius: 26px; padding: 24px 20px 18px;
+  text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,.45); transform: scale(.92) translateY(8px); opacity: 0;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s; }
+.dlg-bg.open .dlg { transform: none; opacity: 1; }
+.dlg h2 { font-size: 19px; margin: 14px 0 6px; }
+.dlg p { color: var(--muted); font-size: 14px; margin: 0 0 18px; line-height: 1.5; }
+.dlg p b { color: var(--text); }
+.dlg p b.up { color: var(--up); } .dlg p b.down { color: var(--down); }
+.dlg-ic { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; margin: 0 auto;
+  background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.dlg-ic.danger { background: color-mix(in srgb, var(--down) 15%, transparent); color: var(--down); }
+.dlg-ic.up { background: color-mix(in srgb, var(--up) 15%, transparent); color: var(--up); }
+.dlg-ic svg.i { width: 26px; height: 26px; }
+.dlg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dlg-actions .btn { padding: 13px 10px; font-size: 15px; border-radius: 14px; }
+.btn.buy { background: var(--up); box-shadow: none; }

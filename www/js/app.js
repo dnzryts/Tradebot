@@ -218,7 +218,7 @@
     let x0 = null, y0 = 0, t0 = 0;
     document.addEventListener('touchstart', e => {
       x0 = null;
-      if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg')) return;
+      if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
       const t = e.touches[0];
       if (t.clientX < 24 || t.clientX > innerWidth - 24) return;            // leave screen edges to Android's back gesture
       if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad')) return; // these scroll/drag themselves
@@ -235,6 +235,7 @@
   })();
   let lastBack = 0;
   function handleBack() {
+    const dlg = $$('.dlg-bg').at(-1); if (dlg && dlg._cancel) { dlg._cancel(); return; }
     const sheets = $$('.sheet-bg:not(.closing)'); if (sheets.length) { closeSheet(sheets.at(-1)); return; }
     if (S.unlocked && $('#view')) {
       while (navStack.length && navStack.at(-1) === S.tab) navStack.pop();
@@ -363,7 +364,7 @@
   }
   async function manualTrade(sym, side, volume) {
     if (!(volume > 0)) return toast('Enter a lot size');
-    if (S.conn.mode === 'mt5' && !confirm(`Place a LIVE ${side} ${volume} ${sym} order on your MT5 account?`)) return;
+    if (S.conn.mode === 'mt5' && !(await ask({ title: `Place live ${side.toLowerCase()} order?`, message: `<b>${side} ${volume} lot ${sym}</b> at market on your MT5 account. Stop-loss and take-profit are set automatically.`, ok: `${side} ${sym}`, tone: side === 'BUY' ? 'up' : 'danger', ic: 'chart' }))) return;
     try { await placeOrder(sym, side, volume, 'Manual'); toast(`${side} ${volume} ${sym} placed`); $('#symsheet')?.remove(); poll(); }
     catch (e) { toast('Order failed: ' + e.message); }
   }
@@ -427,7 +428,7 @@
   async function toggleBot(on) {
     if (on && !S.bot.symbols.length) { toast('Pick at least one symbol'); $('#bottoggle').checked = false; return; }
     if (on && S.conn.mode === 'mt5') {
-      const ok = confirm('Enable auto-trading on your LIVE MT5 account?\n\nThe bot will open and close real positions using your risk settings. You are responsible for all losses.');
+      const ok = await ask({ title: 'Enable live auto-trading?', message: 'The bot will open and close <b>real positions</b> on your MT5 account using your strategy and risk settings. You are responsible for any losses.', ok: 'Enable bot', tone: 'danger', ic: 'bot' });
       if (!ok || (S.profile.biometric && !(await Security.verify('Confirm to enable live auto-trading')))) { $('#bottoggle').checked = false; return; }
     }
     S.bot.enabled = on; S.bot.pausedReason = ''; save(); log(on ? `Bot started (${RISK_PRESETS[S.bot.profile]?.label || 'Custom'} profile)` : 'Bot stopped', on ? 'up' : '');
@@ -473,7 +474,8 @@
   function bindPositions(root) {
     $$('[data-closeall]', root).forEach(b => b.onclick = openCloseAll);
     $$('[data-close]', root).forEach(b => b.onclick = async () => {
-      if (S.conn.mode === 'mt5' && !confirm('Close this live position?')) return;
+      const p = S.positions.find(x => x.id === b.dataset.close);
+      if (S.conn.mode === 'mt5' && !(await ask({ title: 'Close live position?', message: p ? `${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'} ${fmt(p.volume)} lot ${p.symbol} · P/L <b class="${cls(p.profit)}">${signed(p.profit)}</b>` : '', ok: 'Close position', tone: 'danger', ic: 'x' }))) return;
       try { await S.broker.closePosition(b.dataset.close); toast('Position closed'); log(`Closed position #${b.dataset.close} manually`); poll(); } catch (e) { toast('Close failed: ' + e.message); }
     });
   }
@@ -499,7 +501,8 @@
       $('#closelist', el).onclick = async e => { const b = e.target.closest('.close-opt'); if (!b || b.disabled) return;
         const [label, f] = CLOSE_FILTERS[b.dataset.f], n = S.positions.filter(f).length;
         if (!n) return;
-        if (!confirm(`${label}: close ${n} position${n === 1 ? '' : 's'}${S.conn.mode === 'mt5' ? ' on your LIVE account' : ''}?`)) return;
+        const grpPl = S.positions.filter(f).reduce((x, p) => x + p.profit, 0);
+        if (!(await ask({ title: `Close ${n} position${n === 1 ? '' : 's'}?`, message: `${label} · floating P/L <b class="${cls(grpPl)}">${signed(grpPl)}</b>${S.conn.mode === 'mt5' ? '<br>These are <b>live</b> positions on your MT5 account.' : ''}`, ok: n === 1 ? 'Close position' : `Close ${n}`, tone: 'danger', ic: 'x' }))) return;
         const stop = $('#stopbot', el).checked; closeSheet(el);
         await closeAll(b.dataset.f, stop);
       };
@@ -555,8 +558,8 @@
     $('#ppin').onclick = changePin;
     $('#plock').onclick = () => { S.unlocked = false; render(); };
     $('#nsave').onclick = () => { S.newsKey = $('#nkey').value.trim(); store.set('newsKey', S.newsKey); toast(S.newsKey ? 'News sentiment enabled' : 'News sentiment off'); };
-    const r = $('#reset'); if (r) r.onclick = () => { if (confirm('Reset paper account to $10,000?')) { S.broker.reset(); log('Paper account reset'); poll(); toast('Paper account reset'); } };
-    $('#wipe').onclick = async () => { if (!confirm('Erase profile, settings and stored credentials from this device?')) return; await Security.deleteSecret('metaapi'); Object.keys(localStorage).filter(k => k.startsWith('tb')).forEach(k => localStorage.removeItem(k)); location.reload(); };
+    const r = $('#reset'); if (r) r.onclick = async () => { if (await ask({ title: 'Reset paper account?', message: 'Balance goes back to $10,000 and paper positions and history are cleared.', ok: 'Reset', tone: 'danger', ic: 'wallet' })) { S.broker.reset(); log('Paper account reset'); poll(); toast('Paper account reset'); } };
+    $('#wipe').onclick = async () => { if (!(await ask({ title: 'Sign out & erase data?', message: 'Your profile, PIN, settings and stored MetaApi token are removed from this device. Your MT5 account is not affected.', ok: 'Erase', tone: 'danger', ic: 'user' }))) return; await Security.deleteSecret('metaapi'); Object.keys(localStorage).filter(k => k.startsWith('tb')).forEach(k => localStorage.removeItem(k)); location.reload(); };
   }
   function changePin() {
     sheet(`<h2>Change PIN</h2><div class="field" style="margin-top:12px"><label>Current PIN</label><input class="input mono" id="c0" type="password" inputmode="numeric" maxlength="6"></div>
@@ -568,6 +571,20 @@
       };
     });
   }
+  /* Themed in-app dialog (replaces the native Android confirm box). Resolves true/false. */
+  function ask({ title, message = '', ok = 'Confirm', cancel = 'Cancel', tone = 'primary', ic = 'shield' }) {
+    return new Promise(resolve => {
+      const d = document.createElement('div'); d.className = 'dlg-bg';
+      d.innerHTML = `<div class="dlg" role="alertdialog" aria-modal="true"><div class="dlg-ic ${tone}">${icon(ic)}</div>
+        <h2>${esc(title)}</h2>${message ? `<p>${message}</p>` : ''}
+        <div class="dlg-actions"><button class="btn ghost" data-r="0">${esc(cancel)}</button><button class="btn ${tone === 'danger' ? 'danger' : tone === 'up' ? 'buy' : ''}" data-r="1">${esc(ok)}</button></div></div>`;
+      const done = v => { if (d._done) return; d._done = true; d.classList.remove('open'); setTimeout(() => d.remove(), 200); resolve(v); };
+      d._cancel = () => done(false);
+      d.onclick = e => { const b = e.target.closest('[data-r]'); if (b) done(b.dataset.r === '1'); else if (e.target === d) done(false); };
+      document.body.appendChild(d); requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add('open')));
+    });
+  }
+
   function sheet(html, bind, id) { const bg = document.createElement('div'); bg.className = 'sheet-bg'; if (id) bg.id = id; bg.innerHTML = `<div class="sheet"><div class="grip"></div>${html}</div>`; document.body.appendChild(bg); attachSheet(bg); bind && bind(bg); return bg; }
 
   /* Bottom-sheet behaviour: slide up on open; swipe down (from the top of its content), tap outside or Back to close. */

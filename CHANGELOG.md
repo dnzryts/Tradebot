@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.2] - 2026-11-25
+### Changed
+- All confirmations (close positions, live orders, enabling live auto-trading, paper reset, sign out) use a themed in-app dialog instead of the plain Android system box. It has an icon, an explanation with P/L where relevant, and Cancel and confirm buttons. Back or tapping outside cancels.
+
 ## [1.1.1] - 2026-11-25
 ### Added
 - Swipe left or right on any tab screen to move to the next or previous tab, with a directional slide.
