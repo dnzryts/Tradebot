@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1] - 2026-11-24
+### Fixed
+- Screens flickered every refresh because the whole page was rebuilt. Live data is now patched in place: only changed numbers update, and charts, inputs and scroll position are untouched.
+
+### Added
+- Circular refresh ring in the top bar that counts down to the next update and spins while fetching. Tap it to refresh now.
+- Changed values flash green or red for a moment; the sentiment gauge needle animates smoothly.
+
 ## [1.0.0] - 2026-11-24
 ### Added
 - Welcome onboarding, profile setup, PIN and fingerprint lock with auto re-lock

@@ -192,3 +192,23 @@ canvas { display: block; width: 100%; }
 .empty { text-align: center; color: var(--muted); padding: 26px 10px; font-size: 14px; }
 .donut-legend div { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
 .donut-legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* ===== Live refresh ring ===== */
+.ring { width: 42px; height: 42px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; position: relative; }
+.ring svg { width: 26px; height: 26px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 3.2; }
+.ring .track { stroke: var(--card2); }
+.ring .prog { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 94.25; stroke-dashoffset: 94.25; }
+.ring.run .prog { animation: ringfill var(--dur, 2000ms) linear forwards; }
+.ring i { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--up); }
+.ring.busy svg { animation: spin .7s linear infinite; }
+.ring.busy .prog { animation: none; stroke-dashoffset: 66; }
+@keyframes ringfill { from { stroke-dashoffset: 94.25; } to { stroke-dashoffset: 0; } }
+@keyframes spin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+
+/* ===== Value change flash (only the number that changed) ===== */
+.flash-up { animation: flashUp .9s ease; border-radius: 6px; }
+.flash-down { animation: flashDown .9s ease; border-radius: 6px; }
+@keyframes flashUp { 0% { background: color-mix(in srgb, var(--up) 35%, transparent); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: color-mix(in srgb, var(--down) 35%, transparent); } 100% { background: transparent; } }
+text.flash-up, text.flash-down { animation: none; }

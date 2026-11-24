@@ -30,7 +30,7 @@
     newsKey: store.get('newsKey') || '',
     log: store.get('log') || [],
     tab: 'home', broker: null, account: null, positions: [], history: [], analysis: {}, mood: null,
-    focus: 'EURUSD', unlocked: false, status: 'Offline', dayStart: store.get('dayStart'),
+    pollMs: 0, focus: 'EURUSD', unlocked: false, status: 'Offline', dayStart: store.get('dayStart'),
   };
   if (S.bot.enabled && S.conn.mode === 'mt5') S.bot.enabled = false; // never auto-resume live trading after restart
 
@@ -48,6 +48,38 @@
   let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
   function log(msg, kind = '') { S.log.unshift({ t: Date.now(), msg, kind }); S.log = S.log.slice(0, 200); store.set('log', S.log); const el = $('#botlog'); if (el) el.innerHTML = logHtml(); }
   function setTheme(t) { S.theme = t; document.documentElement.dataset.theme = t; document.querySelector('meta[name=theme-color]').content = THEMES[t][0]; save(); }
+
+  /* ---------------- Flicker-free DOM patching ----------------
+     First paint uses innerHTML; later refreshes diff the new markup against the live DOM and
+     touch only changed text/attributes. Canvases, inputs and [data-keep] nodes are left alone. */
+  const num = t => { const m = String(t).match(/-?\$?[\d,]*\.?\d+/); return m ? parseFloat(m[0].replace(/[$,]/g, '')) : NaN; };
+  function flash(el, before, after) {
+    if (!el || !el.closest || !el.closest('.mono, .val, .big, .title, .chip, text')) return;
+    const a = num(before), b = num(after); if (isNaN(a) || isNaN(b) || a === b) return;
+    const c = b > a ? 'flash-up' : 'flash-down'; el.classList.remove('flash-up', 'flash-down'); void el.offsetWidth; el.classList.add(c);
+  }
+  function morph(a, b) {
+    const ac = a.childNodes, bc = b.childNodes;
+    for (let i = 0; i < bc.length; i++) {
+      const x = ac[i], y = bc[i];
+      if (!x) { a.appendChild(y.cloneNode(true)); continue; }
+      if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || (x.nodeType === 1 && x.getAttribute('data-key') !== y.getAttribute('data-key'))) { a.replaceChild(y.cloneNode(true), x); continue; }
+      if (x.nodeType === 3) { if (x.nodeValue !== y.nodeValue) { const old = x.nodeValue; x.nodeValue = y.nodeValue; flash(x.parentNode, old, y.nodeValue); } continue; }
+      if (x.nodeType !== 1 || x.tagName === 'CANVAS' || x.tagName === 'INPUT' || x.hasAttribute('data-keep')) continue;
+      for (const at of [...x.attributes]) if (!y.hasAttribute(at.name) && !(at.name === 'class' && /flash-/.test(at.value))) x.removeAttribute(at.name);
+      for (const at of [...y.attributes]) {
+        if (at.name === 'class') { const fl = [...x.classList].filter(c => c.startsWith('flash-')); const want = at.value + (fl.length ? ' ' + fl.join(' ') : ''); if (x.getAttribute('class') !== want) x.setAttribute('class', want); }
+        else if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+      }
+      morph(x, y);
+    }
+    while (ac.length > bc.length) a.removeChild(a.lastChild);
+  }
+  /* Paint `html` into `el`. Same view key as last time → patch in place; otherwise full render. */
+  function paint(el, html, key) {
+    if (el.dataset.view === key) { const t = document.createElement('div'); t.innerHTML = html; morph(el, t); }
+    else { el.innerHTML = html; el.dataset.view = key; }
+  }
 
   /* ---------------- Icons ---------------- */
   const P = {
@@ -164,7 +196,7 @@
   function renderMain() {
     const tabs = [['home', 'home', 'Home'], ['markets', 'chart', 'Markets'], ['bot', 'bot', 'Auto-Trade'], ['portfolio', 'wallet', 'Portfolio'], ['profile', 'user', 'Profile']];
     app.innerHTML = `<div id="view"></div><nav class="nav"><div class="nav-inner">${tabs.map(([k, ic, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${icon(ic)}${l}</button>`).join('')}</div></nav>`;
-    $$('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; $$('.nav button').forEach(x => x.classList.toggle('on', x === b)); renderView(); window.scrollTo(0, 0); if (S.tab === 'markets') analyseAll(); });
+    $$('.nav button').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; $$('.nav button').forEach(x => x.classList.toggle('on', x === b)); $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0); if (S.tab === 'markets') analyseAll(); });
     renderView();
   }
   function renderView() {
@@ -175,21 +207,32 @@
   function refreshLive() {
     if (!S.unlocked || !$('#view')) return;
     if (['home', 'markets', 'portfolio'].includes(S.tab)) renderView();
-    if (S.tab === 'bot') { const st = $('#botstat'); if (st) { st.innerHTML = botStatusHtml(); $('#bottoggle').onchange = e => toggleBot(e.target.checked); } }
+    if (S.tab === 'bot') { const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); } }
     const sh = $('#symsheet'); if (sh) symbolSheetUpdate();
   }
 
   const topbar = (title) => `<div class="topbar"><div><div class="hello">${greeting()}, ${esc(S.profile.name)}</div><h2>${title}</h2></div>
-    <button class="icon-btn" id="connbtn" title="Account">${S.conn.mode === 'mt5' ? `<span class="dot ${S.status === 'Connected' ? 'live' : ''}"></span>` : icon('link')}</button></div>`;
+    <div class="row" style="gap:8px"><button class="ring" id="ring" data-keep title="Live data · tap to refresh now">${ringSvg}</button>
+    <button class="icon-btn" id="connbtn" title="Account">${S.conn.mode === 'mt5' ? `<span class="dot ${S.status === 'Connected' ? 'live' : ''}"></span>` : icon('link')}</button></div></div>`;
+  const ringSvg = '<svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle class="prog" cx="18" cy="18" r="15"/></svg><i></i>';
   const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
-  const bindTop = () => { const b = $('#connbtn'); if (b) b.onclick = openConnect; };
+  const bindTop = () => {
+    const b = $('#connbtn'); if (b) b.onclick = openConnect;
+    const r = $('#ring'); if (r && !r.onclick) { r.onclick = () => { poll(); analyseAll(); }; ringCycle(); }
+  };
+  /* Circular countdown to the next refresh; spins while a refresh is in flight. */
+  function ringCycle() {
+    const r = $('#ring'); if (!r) return;
+    r.style.setProperty('--dur', S.pollMs + 'ms'); r.classList.remove('run'); void r.offsetWidth; r.classList.add('run');
+  }
+  const ringBusy = on => { const r = $('#ring'); if (r) r.classList.toggle('busy', on); };
 
   /* ---------- Home ---------- */
   function viewHome(v) {
     const a = S.account || {}, pl = (a.equity ?? 0) - (a.balance ?? 0);
     const focus = S.analysis[S.focus];
     const mood = S.mood || { score: 0, label: 'Analysing…', bulls: 0, bears: 0 };
-    v.innerHTML = `<div class="screen">${topbar('Dashboard')}
+    paint(v, `<div class="screen">${topbar('Dashboard')}
       <div class="card hero">
         <div class="row between"><span class="muted">Equity · ${esc(a.name || '—')}</span><span class="chip" style="background:rgba(255,255,255,.2)">${S.conn.mode === 'mt5' ? 'LIVE MT5' : 'PAPER'}</span></div>
         <div class="big mono" style="margin:6px 0 12px">${money(a.equity ?? 0)}</div>
@@ -208,7 +251,7 @@
         <div class="chart-box" style="margin-top:10px"><canvas id="chart" height="230"></canvas></div></div>
       <h3>Open positions</h3><div class="card">${positionsHtml(S.positions.slice(0, 4))}</div>
       <h3>Bot activity</h3><div class="card log">${S.log.slice(0, 5).map(logRow).join('') || '<div class="empty">No activity yet</div>'}</div>
-    </div>`;
+    </div>`, 'home');
     bindTop();
     $$('#focus button').forEach(b => b.onclick = () => { S.focus = b.dataset.s; renderView(); });
     bindPositions(v);
@@ -220,19 +263,19 @@
     const ang = (score / 100) * 90; const col = score >= 25 ? 'var(--up)' : score <= -25 ? 'var(--down)' : 'var(--warn)';
     return `<svg class="gauge" viewBox="0 0 140 86"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="var(--down)"/><stop offset=".5" stop-color="var(--warn)"/><stop offset="1" stop-color="var(--up)"/></linearGradient></defs>
       <path d="M14 76 A56 56 0 0 1 126 76" stroke="url(#gg)" stroke-width="12" fill="none" stroke-linecap="round" opacity=".9"/>
-      <g transform="rotate(${ang} 70 76)" style="transition:transform .6s"><line x1="70" y1="76" x2="70" y2="30" stroke="${col}" stroke-width="4" stroke-linecap="round"/></g>
+      <g style="transform:rotate(${ang}deg);transform-origin:70px 76px;transition:transform .8s cubic-bezier(.2,.8,.2,1)"><line x1="70" y1="76" x2="70" y2="30" stroke="${col}" stroke-width="4" stroke-linecap="round"/></g>
       <circle cx="70" cy="76" r="7" fill="${col}"/><text x="70" y="62" text-anchor="middle" font-size="17" font-weight="800">${score > 0 ? '+' : ''}${score}</text></svg>`;
   }
 
   /* ---------- Markets ---------- */
   function viewMarkets(v) {
     const syms = S.allSymbols || watch();
-    v.innerHTML = `<div class="screen">${topbar('Markets')}
+    paint(v, `<div class="screen">${topbar('Markets')}
       <div class="card"><div class="sub">Sentiment combines trend (EMA 20/50), RSI momentum, MACD, rate of change, candle flow, mean-reversion${S.newsKey ? ' and live news' : ''}. Tap a symbol for details and manual trades.</div></div>
-      <div class="card">${syms.map(s => { const a = S.analysis[s]; return `<div class="list-item" data-sym="${s}" style="cursor:pointer">
+      <div class="card">${syms.map(s => { const a = S.analysis[s]; return `<div class="list-item" data-sym="${s}" data-key="${s}" style="cursor:pointer">
         <div class="avatar">${s.slice(0, 3)}</div><div class="grow"><div class="title">${s}</div><div class="sub">${a ? `RSI ${fmt(a.rsi, 0)} · conf ${a.confidence}%` : 'Analysing…'}</div></div>
         <div class="right"><div class="mono title">${a ? px(s, a.price) : '—'}</div>${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '▲' : a.score < 0 ? '▼' : '•'} ${a.label}</span>` : ''}</div></div>`; }).join('')}</div>
-    </div>`;
+    </div>`, 'markets');
     bindTop();
     $$('[data-sym]').forEach(r => r.onclick = () => openSymbol(r.dataset.sym));
   }
@@ -246,9 +289,8 @@
   }
   function symbolSheetUpdate(first) {
     const sym = S.focus, a = S.analysis[sym], body = $('#symbody'); if (!body) return;
-    if (!first && $('#lot') === document.activeElement) return; // don't disturb typing
     const lot = $('#lot')?.value || '0.10';
-    body.innerHTML = `<div class="row between"><div><h2>${sym}</h2><div class="sub mono">${a ? px(sym, a.price) : '—'} · ATR ${a ? px(sym, a.atr) : '—'}</div></div>
+    paint(body, `<div class="row between"><div><h2>${sym}</h2><div class="sub mono">${a ? px(sym, a.price) : '—'} · ATR ${a ? px(sym, a.atr) : '—'}</div></div>
       ${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '+' : ''}${a.score} · ${a.label}</span>` : ''}</div>
       <div class="chart-box" style="margin:12px 0"><canvas id="symchart" height="230"></canvas></div>
       ${a ? `<div class="grid3" style="margin-bottom:10px"><div class="stat"><div class="lbl">Signal</div><div class="val ${a.signal === 'BUY' ? 'up' : a.signal === 'SELL' ? 'down' : ''}">${a.signal}</div></div>
@@ -256,7 +298,7 @@
         <div class="card" style="background:var(--card2)">${a.factors.map(f => `<div class="factor"><span class="muted">${f.key}</span><div class="bar"><i style="left:${f.v < 0 ? 50 + f.v / 2 : 50}%;width:${Math.abs(f.v) / 2}%;background:${f.v >= 0 ? 'var(--up)' : 'var(--down)'}"></i><i style="left:50%;width:1px;background:var(--muted)"></i></div><span class="mono right ${cls(f.v)}">${f.v > 0 ? '+' : ''}${f.v}</span></div>`).join('')}</div>` : '<div class="empty">Analysing…</div>'}
       <div class="field"><label>Lot size</label><input class="input mono" id="lot" type="number" step="0.01" min="0.01" value="${lot}"></div>
       <div class="grid2"><button class="btn" style="background:var(--up)" data-side="BUY">Buy</button><button class="btn danger" data-side="SELL">Sell</button></div>
-      <p class="hint">Stop-loss / take-profit are set from ATR × ${S.bot.slAtr} / ${S.bot.tpAtr} (Auto-Trade settings).</p>`;
+      <p class="hint">Stop-loss / take-profit are set from ATR × ${S.bot.slAtr} / ${S.bot.tpAtr} (Auto-Trade settings).</p>`, 'sym:' + sym);
     $$('[data-side]', body).forEach(b => b.onclick = () => manualTrade(sym, b.dataset.side, +$('#lot').value));
     drawChart($('#symchart'), sym);
   }
@@ -271,7 +313,7 @@
   function viewBot(v) {
     const b = S.bot, all = S.allSymbols || Object.keys(Brokers.SPECS);
     v.innerHTML = `<div class="screen">${topbar('Auto-Trade')}
-      <div class="card" id="botstat">${botStatusHtml()}</div>
+      <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
       ${S.conn.mode === 'mt5' ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
       <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
       <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${all.slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
@@ -319,7 +361,7 @@
       if (!ok || (S.profile.biometric && !(await Security.verify('Confirm to enable live auto-trading')))) { $('#bottoggle').checked = false; return; }
     }
     S.bot.enabled = on; S.bot.pausedReason = ''; save(); log(on ? `Bot started (${RISK_PRESETS[S.bot.profile]?.label || 'Custom'} profile)` : 'Bot stopped', on ? 'up' : '');
-    const st = $('#botstat'); if (st) { st.innerHTML = botStatusHtml(); $('#bottoggle').onchange = e => toggleBot(e.target.checked); }
+    const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); }
     scheduleBot(true);
   }
   const logRow = l => `<div><time>${time(l.t)}</time><span class="${l.kind}">${esc(l.msg)}</span></div>`;
@@ -330,7 +372,7 @@
     const a = S.account || {}, h = S.history;
     const wins = h.filter(d => d.profit > 0), realized = h.reduce((s, d) => s + d.profit, 0);
     const exp = {}; S.positions.forEach(p => exp[p.symbol] = (exp[p.symbol] || 0) + Math.abs(p.volume));
-    v.innerHTML = `<div class="screen">${topbar('Portfolio')}
+    paint(v, `<div class="screen">${topbar('Portfolio')}
       <div class="card"><div class="row between"><div><div class="sub">Realised P/L (${S.conn.mode === 'mt5' ? '30 days' : 'all time'})</div><div class="big mono ${cls(realized)}" style="font-size:28px">${signed(realized)}</div></div>
         <div class="right"><div class="sub">Win rate</div><div class="title" style="font-size:20px">${h.length ? fmt(wins.length / h.length * 100, 0) : 0}%</div></div></div>
         ${h.length ? '<div class="chart-box" style="height:120px;margin-top:8px"><canvas id="eq" height="120"></canvas></div>' : '<div class="sub" style="margin:10px 0">Equity curve appears after your first closed trade.</div>'}
@@ -338,10 +380,10 @@
         <div class="stat"><div class="lbl">Avg loss</div><div class="val mono down">${money(h.length - wins.length ? h.filter(d => d.profit <= 0).reduce((s, d) => s + d.profit, 0) / (h.length - wins.length) : 0)}</div></div></div></div>
       <h3>Allocation</h3><div class="card">${Object.keys(exp).length ? `<div class="row">${donut(exp)}<div class="donut-legend grow">${Object.entries(exp).map(([s, vol], k) => `<div><i style="background:${pal(k)}"></i>${s}<span class="grow"></span><b class="mono">${fmt(vol)} lot</b></div>`).join('')}</div></div>` : '<div class="empty">No open exposure</div>'}</div>
       <h3>Open positions · ${S.positions.length}</h3><div class="card">${positionsHtml(S.positions)}</div>
-      <h3>Closed trades</h3><div class="card">${h.slice(0, 30).map(d => `<div class="list-item"><div class="avatar ${d.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
+      <h3>Closed trades</h3><div class="card">${h.slice(0, 30).map(d => `<div class="list-item" data-key="d${d.id}-${d.time}"><div class="avatar ${d.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
         <div class="grow"><div class="title">${d.symbol} <span class="sub">${fmt(d.volume)} lot</span></div><div class="sub">${new Date(d.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${d.reason ? ' · ' + d.reason : ''}</div></div>
         <div class="mono title ${cls(d.profit)}">${signed(d.profit)}</div></div>`).join('') || '<div class="empty">No closed trades yet</div>'}</div>
-    </div>`;
+    </div>`, 'portfolio');
     bindTop(); bindPositions(v);
     const pts = []; let run = (a.balance ?? 0) - realized; pts.push(run); h.slice().reverse().forEach(d => pts.push(run += d.profit)); pts.push(a.equity ?? run);
     drawLine($('#eq'), pts);
@@ -353,7 +395,7 @@
   }
   function positionsHtml(list) {
     if (!list.length) return '<div class="empty">No open positions</div>';
-    return list.map(p => `<div class="list-item"><div class="avatar ${p.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
+    return list.map(p => `<div class="list-item" data-key="p${p.id}"><div class="avatar ${p.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
       <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${(p.comment || '').startsWith('TB') ? ' · 🤖' : ''}</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
       <div class="right"><div class="mono title ${cls(p.profit)}">${signed(p.profit)}</div><button class="sub" data-close="${p.id}" style="color:var(--accent);font-weight:700">Close</button></div></div>`).join('');
   }
@@ -504,10 +546,13 @@
       S.broker = new Brokers.DemoBroker(store); S.allSymbols = Object.keys(Brokers.SPECS); S.status = 'Connected';
       S.broker.onEvent = ev => { if (ev.type === 'closed' && ev.deal.reason !== 'Manual') log(`${ev.deal.reason} hit on ${ev.deal.symbol}: ${signed(ev.deal.profit)}`, cls(ev.deal.profit)); };
     }
+    S.pollMs = S.conn.mode === 'mt5' ? 5000 : 2000;
+    if (pollT) { clearInterval(pollT); pollT = setInterval(poll, S.pollMs); }
     S.candleCache = {}; await poll(); await analyseAll(); scheduleBot(true);
   }
   async function poll() {
     if (!S.broker) return;
+    ringBusy(true);
     try {
       [S.account, S.positions] = await Promise.all([S.broker.getAccount(), S.broker.getPositions()]);
       if (!S._histT || Date.now() - S._histT > (S.conn.mode === 'mt5' ? 60000 : 0)) { S.history = await S.broker.getHistory(); S._histT = Date.now(); }
@@ -515,7 +560,7 @@
       if (!S.dayStart || S.dayStart.day !== today) { S.dayStart = { day: today, equity: S.account.equity }; store.set('dayStart', S.dayStart); }
       if (S.conn.mode === 'mt5') S.status = 'Connected';
     } catch (e) { S.status = 'Error'; }
-    refreshLive();
+    refreshLive(); ringBusy(false); ringCycle();
   }
   const todayPnl = () => S.account && S.dayStart ? S.account.equity - S.dayStart.equity : 0;
 
@@ -594,8 +639,9 @@
   let booted = false;
   async function boot() {
     if (booted) return; booted = true;
+    S.pollMs = S.conn.mode === 'mt5' ? 5000 : 2000;
     try { await connectBroker(); } catch (e) { toast('Account offline: ' + e.message); }
-    pollT = setInterval(poll, S.conn.mode === 'mt5' ? 5000 : 1500);
+    pollT = setInterval(poll, S.pollMs);
     anaT = setInterval(() => !S.bot.enabled && analyseAll(), S.conn.mode === 'mt5' ? 60000 : 6000);
     try { window.Capacitor?.Plugins?.LocalNotifications?.requestPermissions(); } catch { }
   }
