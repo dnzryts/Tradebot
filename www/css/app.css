@@ -224,3 +224,28 @@ text.flash-up, text.flash-down { animation: none; }
 .closeall-btn { margin-top: 12px; color: var(--down); }
 .btn svg.i { width: 18px; height: 18px; }
 .close-opt:active { background: var(--card2); }
+
+/* ===== Section header with action (e.g. Close all) ===== */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 22px 0 10px; min-height: 32px; }
+.section-head h3 { margin: 0; }
+.closeall-pill { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px 0 10px; border-radius: 99px;
+  font-size: 13px; font-weight: 700; color: var(--down); background: color-mix(in srgb, var(--down) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--down) 28%, transparent); }
+.closeall-pill svg.i { width: 15px; height: 15px; stroke-width: 2.4; }
+.closeall-pill:active { transform: scale(.96); }
+
+/* ===== Bottom sheet open/close + drag ===== */
+.sheet-bg { transition: background-color .28s ease; background-color: rgba(0,0,0,0); animation: none; }
+.sheet-bg.open { background-color: rgba(0,0,0,.5); }
+.sheet { transform: translateY(100%); transition: transform .3s cubic-bezier(.2,.8,.2,1); will-change: transform; overscroll-behavior: contain; }
+.sheet-bg.open .sheet { transform: translateY(0); }
+.sheet.dragging { transition: none; }
+.sheet .grip { width: 44px; height: 5px; margin: 4px auto 14px; position: relative; }
+.sheet .grip::after { content: ""; position: absolute; left: -40px; right: -40px; top: -14px; bottom: -14px; } /* bigger touch target */
+
+/* ===== Tab change slide ===== */
+.screen.enter-right { animation: enterRight .28s cubic-bezier(.2,.8,.2,1); }
+.screen.enter-left { animation: enterLeft .28s cubic-bezier(.2,.8,.2,1); }
+@keyframes enterRight { from { opacity: .3; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes enterLeft { from { opacity: .3; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
+html, body { overflow-x: hidden; }

@@ -66,9 +66,9 @@
       if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || (x.nodeType === 1 && x.getAttribute('data-key') !== y.getAttribute('data-key'))) { a.replaceChild(y.cloneNode(true), x); continue; }
       if (x.nodeType === 3) { if (x.nodeValue !== y.nodeValue) { const old = x.nodeValue; x.nodeValue = y.nodeValue; flash(x.parentNode, old, y.nodeValue); } continue; }
       if (x.nodeType !== 1 || x.tagName === 'CANVAS' || x.tagName === 'INPUT' || x.hasAttribute('data-keep')) continue;
-      for (const at of [...x.attributes]) if (!y.hasAttribute(at.name) && !(at.name === 'class' && /flash-/.test(at.value))) x.removeAttribute(at.name);
+      for (const at of [...x.attributes]) if (!y.hasAttribute(at.name) && !(at.name === 'class' && /flash-|enter-/.test(at.value))) x.removeAttribute(at.name);
       for (const at of [...y.attributes]) {
-        if (at.name === 'class') { const fl = [...x.classList].filter(c => c.startsWith('flash-')); const want = at.value + (fl.length ? ' ' + fl.join(' ') : ''); if (x.getAttribute('class') !== want) x.setAttribute('class', want); }
+        if (at.name === 'class') { const fl = [...x.classList].filter(c => c.startsWith('flash-') || c.startsWith('enter-')); const want = at.value + (fl.length ? ' ' + fl.join(' ') : ''); if (x.getAttribute('class') !== want) x.setAttribute('class', want); }
         else if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
       }
       morph(x, y);
@@ -202,17 +202,40 @@
   /* ---------- Navigation + Android back button ----------
      Back closes the top sheet → returns to the previous tab → goes Home → (on Home) press twice to exit. */
   const navStack = [];
-  function goTab(tab, fromBack = false) {
+  const TAB_ORDER = ['home', 'markets', 'bot', 'portfolio', 'profile'];
+  function goTab(tab, fromBack = false, dir = 0) {
     if (!$('#view') || tab === S.tab) return;
+    if (!dir) dir = Math.sign(TAB_ORDER.indexOf(tab) - TAB_ORDER.indexOf(S.tab));
     if (!fromBack) { navStack.push(S.tab); if (navStack.length > 30) navStack.shift(); }
     S.tab = tab;
     $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
     $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0);
+    const scr = $('#view .screen'); if (scr) scr.classList.add(dir > 0 ? 'enter-right' : 'enter-left');
     if (tab === 'markets') analyseAll();
   }
+  /* Swipe left/right anywhere on a tab screen to move to the next/previous tab. */
+  (function setupSwipeTabs() {
+    let x0 = null, y0 = 0, t0 = 0;
+    document.addEventListener('touchstart', e => {
+      x0 = null;
+      if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg')) return;
+      const t = e.touches[0];
+      if (t.clientX < 24 || t.clientX > innerWidth - 24) return;            // leave screen edges to Android's back gesture
+      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad')) return; // these scroll/drag themselves
+      x0 = t.clientX; y0 = t.clientY; t0 = performance.now();
+    }, { passive: true });
+    document.addEventListener('touchend', e => {
+      if (x0 == null) return;
+      const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0, dt = performance.now() - t0; x0 = null;
+      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.6 || dt > 700) return;
+      const i = TAB_ORDER.indexOf(S.tab), j = i + (dx < 0 ? 1 : -1);
+      if (j < 0 || j >= TAB_ORDER.length) return;
+      goTab(TAB_ORDER[j], false, dx < 0 ? 1 : -1);
+    }, { passive: true });
+  })();
   let lastBack = 0;
   function handleBack() {
-    const sheets = $$('.sheet-bg'); if (sheets.length) { sheets.at(-1).remove(); return; }
+    const sheets = $$('.sheet-bg:not(.closing)'); if (sheets.length) { closeSheet(sheets.at(-1)); return; }
     if (S.unlocked && $('#view')) {
       while (navStack.length && navStack.at(-1) === S.tab) navStack.pop();
       if (navStack.length) return goTab(navStack.pop(), true);
@@ -239,6 +262,7 @@
     if (S.tab === 'bot') { const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
       const rd = $('#radar'); if (rd) paint(rd, radarHtml(), 'radar'); }
     const sh = $('#symsheet'); if (sh) symbolSheetUpdate();
+    const cl = $('#closelist'); if (cl) paint(cl, closeRowsHtml(), 'close');
   }
 
   const topbar = (title) => `<div class="topbar"><div><div class="hello">${greeting()}, ${esc(S.profile.name)}</div><h2>${title}</h2></div>
@@ -319,8 +343,7 @@
     S.focus = sym;
     const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'symsheet';
     bg.innerHTML = `<div class="sheet"><div class="grip"></div><div id="symbody"></div></div>`;
-    bg.onclick = e => { if (e.target === bg) bg.remove(); };
-    document.body.appendChild(bg); symbolSheetUpdate(true);
+    document.body.appendChild(bg); attachSheet(bg); symbolSheetUpdate(true);
   }
   function symbolSheetUpdate(first) {
     const sym = S.focus, a = S.analysis[sym], body = $('#symbody'); if (!body) return;
@@ -446,7 +469,7 @@
       <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${isBot(p) ? ' · 🤖' : ''}</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
       <div class="right"><div class="mono title ${cls(p.profit)}">${signed(p.profit)}</div><button class="sub" data-close="${p.id}" style="color:var(--accent);font-weight:700">Close</button></div></div>`).join('');
   }
-  const posHeader = t => `<div class="row between"><h3>${t}</h3>${S.positions.length ? `<button class="btn small ghost closeall-btn" data-closeall>${icon('x')}Close all</button>` : ''}</div>`;
+  const posHeader = t => `<div class="section-head"><h3>${t}</h3>${S.positions.length ? `<button class="closeall-pill" data-closeall>${icon('x')}Close all</button>` : ''}</div>`;
   function bindPositions(root) {
     $$('[data-closeall]', root).forEach(b => b.onclick = openCloseAll);
     $$('[data-close]', root).forEach(b => b.onclick = async () => {
@@ -462,23 +485,25 @@
     profit: ['Profitable only', p => p.profit > 0],
     loss: ['Losing only', p => p.profit <= 0],
   };
+  function closeRowsHtml() {
+    return Object.entries(CLOSE_FILTERS).map(([k, [label, f]]) => { const list = S.positions.filter(f), pl = list.reduce((x, p) => x + p.profit, 0);
+      return `<button class="list-item close-opt" data-f="${k}" ${list.length ? '' : 'disabled'} style="width:100%;text-align:left;${list.length ? '' : 'opacity:.45'}"><div class="avatar">${list.length}</div>
+        <div class="grow"><div class="title">${label}</div><div class="sub">${list.length} position${list.length === 1 ? '' : 's'}</div></div><div class="mono title ${cls(pl)}">${signed(pl)}</div></button>`; }).join('');
+  }
   function openCloseAll() {
     if (!S.positions.length) return toast('No open positions');
-    const row = ([k, [label, f]]) => { const list = S.positions.filter(f), pl = list.reduce((x, p) => x + p.profit, 0);
-      return `<button class="list-item close-opt" data-f="${k}" ${list.length ? '' : 'disabled'} style="width:100%;text-align:left;${list.length ? '' : 'opacity:.45'}"><div class="avatar">${list.length}</div>
-        <div class="grow"><div class="title">${label}</div><div class="sub">${list.length} position${list.length === 1 ? '' : 's'}</div></div><div class="mono title ${cls(pl)}">${signed(pl)}</div></button>`; };
     sheet(`<h2>Close positions</h2><p class="sub">Market orders close at the current price. Floating P/L shown per group.</p>
-      <div class="card" style="padding:4px 14px">${Object.entries(CLOSE_FILTERS).map(row).join('')}</div>
+      <div class="card" style="padding:4px 14px" id="closelist" data-view="close">${closeRowsHtml()}</div>
       <div class="card row between"><div><div class="title">Also stop the bot</div><div class="sub">Prevents new trades straight after closing</div></div><label class="toggle"><input type="checkbox" id="stopbot" ${S.bot.enabled ? 'checked' : ''}><span></span></label></div>
       ${S.conn.mode === 'mt5' ? '<div class="notice">This closes <b>live</b> positions on your MT5 account.</div>' : ''}`, el => {
-      $$('.close-opt', el).forEach(b => b.onclick = async () => {
+      $('#closelist', el).onclick = async e => { const b = e.target.closest('.close-opt'); if (!b || b.disabled) return;
         const [label, f] = CLOSE_FILTERS[b.dataset.f], n = S.positions.filter(f).length;
         if (!n) return;
         if (!confirm(`${label}: close ${n} position${n === 1 ? '' : 's'}${S.conn.mode === 'mt5' ? ' on your LIVE account' : ''}?`)) return;
-        const stop = $('#stopbot', el).checked; el.remove();
+        const stop = $('#stopbot', el).checked; closeSheet(el);
         await closeAll(b.dataset.f, stop);
-      });
-    });
+      };
+    }, 'closesheet');
   }
   async function closeAll(filter = 'all', stopBot = false) {
     if (stopBot && S.bot.enabled) { S.bot.enabled = false; S.bot.pausedReason = 'Stopped by Close all'; save(); scheduleBot(); log('Bot stopped (Close all)'); }
@@ -543,7 +568,44 @@
       };
     });
   }
-  function sheet(html, bind) { const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.innerHTML = `<div class="sheet"><div class="grip"></div>${html}</div>`; bg.onclick = e => { if (e.target === bg) bg.remove(); }; document.body.appendChild(bg); bind && bind(bg); return bg; }
+  function sheet(html, bind, id) { const bg = document.createElement('div'); bg.className = 'sheet-bg'; if (id) bg.id = id; bg.innerHTML = `<div class="sheet"><div class="grip"></div>${html}</div>`; document.body.appendChild(bg); attachSheet(bg); bind && bind(bg); return bg; }
+
+  /* Bottom-sheet behaviour: slide up on open; swipe down (from the top of its content), tap outside or Back to close. */
+  function attachSheet(bg) {
+    const sh = $('.sheet', bg);
+    requestAnimationFrame(() => requestAnimationFrame(() => bg.classList.add('open')));
+    bg.addEventListener('click', e => { if (e.target === bg) closeSheet(bg); });
+    let y0 = null, dy = 0, t0 = 0, dragging = false;
+    sh.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) return;
+      if (sh.scrollTop > 0 && !e.target.closest('.grip')) return; // let the content scroll first
+      y0 = e.touches[0].clientY; t0 = performance.now(); dy = 0; dragging = false;
+    }, { passive: true });
+    sh.addEventListener('touchmove', e => {
+      if (y0 == null) return;
+      dy = e.touches[0].clientY - y0;
+      if (!dragging) { if (dy > 8) { dragging = true; sh.classList.add('dragging'); } else if (dy < -8) { y0 = null; return; } else return; }
+      e.preventDefault();
+      const d = Math.max(0, dy);
+      sh.style.transform = `translateY(${d}px)`;
+      bg.style.backgroundColor = `rgba(0,0,0,${.5 * Math.max(0, 1 - d / (sh.offsetHeight || 600))})`;
+    }, { passive: false });
+    const end = () => {
+      if (y0 == null) return;
+      const v = dy / Math.max(1, performance.now() - t0); y0 = null;
+      if (!dragging) return;
+      dragging = false; sh.classList.remove('dragging');
+      if (dy > Math.min(140, sh.offsetHeight * .25) || v > .55) closeSheet(bg);
+      else { sh.style.transform = ''; bg.style.backgroundColor = ''; }
+    };
+    sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', end);
+  }
+  function closeSheet(bg) {
+    if (!bg || bg.classList.contains('closing')) return;
+    bg.classList.add('closing'); bg.classList.remove('open');
+    const sh = $('.sheet', bg); sh.style.transform = ''; bg.style.backgroundColor = '';
+    setTimeout(() => bg.remove(), 280);
+  }
 
   /* ---------- Connect MT5 ---------- */
   function openConnect() {

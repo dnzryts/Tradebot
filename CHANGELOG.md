@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1] - 2026-11-25
+### Added
+- Swipe left or right on any tab screen to move to the next or previous tab, with a directional slide.
+- Bottom sheets: swipe down to dismiss (follows the finger, springs back on short drags, closes on a long drag or flick), slide-up open animation, and an animated close from the backdrop or Back.
+- The Close positions sheet updates its counts and P/L live while open.
+
+### Fixed
+- The Close all button is now vertically aligned with the section heading, styled as a compact red pill.
+
 ## [1.1.0] - 2026-11-25
 ### Added
 - **Adaptive Auto strategy.** Detects each symbol's regime (trending, breakout, ranging or mixed) and runs Trend, Breakout, Reversion or strict Sentiment logic to match. Overall market mood scales position size (×1.25 with the mood, ×0.6 against) and blocks strong counter-mood trend trades.
