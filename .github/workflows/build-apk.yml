@@ -82,9 +82,12 @@ jobs:
       - name: Publish latest APK to apk branch
         if: github.ref == 'refs/heads/main'
         run: |
-          mkdir -p /tmp/apkbranch && cp Tradebot-*.apk /tmp/apkbranch/
+          mkdir -p /tmp/apkbranch
+          # Prefer the release build signed with your permanent key (installs as an update every time)
+          if [ -f Tradebot-release.apk ]; then cp Tradebot-release.apk /tmp/apkbranch/Tradebot.apk; KIND="release (signed with your key)"; else cp Tradebot-debug.apk /tmp/apkbranch/Tradebot.apk; KIND="debug (temporary key: add signing secrets, see docs/BUILDING.md)"; fi
+          cp Tradebot-debug.apk /tmp/apkbranch/
           cd /tmp/apkbranch
-          printf '# Tradebot APK\n\nLatest build of `main` (%s, run #%s).\n\nDownload: [Tradebot-debug.apk](Tradebot-debug.apk)\n' "${GITHUB_SHA::7}" "$GITHUB_RUN_NUMBER" > README.md
+          printf '# Tradebot APK\n\nLatest build of `main` (%s, run #%s): **%s**\n\nDownload: [Tradebot.apk](Tradebot.apk)\n' "${GITHUB_SHA::7}" "$GITHUB_RUN_NUMBER" "$KIND" > README.md
           git init -q -b apk
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"

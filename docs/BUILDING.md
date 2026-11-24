@@ -66,6 +66,10 @@ Everything works in Paper mode. Fingerprint is simulated, and secrets go to `loc
 - Locks the main activity to portrait
 - Sets `versionCode` and `versionName`
 
+## Why a permanent signing key matters
+
+Without the signing secrets, each GitHub runner signs the APK with a new temporary debug key. Android then refuses to install the next build over the old one, because a changed signature looks like tampering. After you add the four secrets above, `Tradebot.apk` on the `apk` branch is always the release build signed with your key, so updates install in place.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -73,4 +77,5 @@ Everything works in Paper mode. Fingerprint is simulated, and secrets go to `loc
 | `Unsupported class file major version` | Use JDK 21 (`java -version`) |
 | `SDK location not found` | Set `ANDROID_HOME`, or create `android/local.properties` with `sdk.dir=…` |
 | Fingerprint option greyed out | No fingerprint is enrolled on the device. Add one in Android Settings → Security |
-| "App not installed" | Uninstall the older build first if it was signed with a different key |
+| "App not installed" / "package conflicts" | The installed build was signed with a different key. Uninstall it once, then install the new one |
+| Play Protect "Unsafe app blocked" / "Unknown app" | Expected for apps installed outside the Play Store. Tap **More details → Install anyway** |
