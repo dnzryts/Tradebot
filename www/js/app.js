@@ -200,7 +200,7 @@
     renderView();
   }
   /* ---------- Navigation + Android back button ----------
-     Back closes the top sheet → returns to the previous tab → goes Home → (on Home) press twice to exit. */
+     Back closes the top dialog/sheet → otherwise jumps straight to Home → on Home, press twice to exit. */
   const navStack = [];
   const TAB_ORDER = ['home', 'markets', 'bot', 'portfolio', 'profile'];
   function goTab(tab, fromBack = false, dir = 0) {
@@ -237,11 +237,7 @@
   function handleBack() {
     const dlg = $$('.dlg-bg').at(-1); if (dlg && dlg._cancel) { dlg._cancel(); return; }
     const sheets = $$('.sheet-bg:not(.closing)'); if (sheets.length) { closeSheet(sheets.at(-1)); return; }
-    if (S.unlocked && $('#view')) {
-      while (navStack.length && navStack.at(-1) === S.tab) navStack.pop();
-      if (navStack.length) return goTab(navStack.pop(), true);
-      if (S.tab !== 'home') return goTab('home', true);
-    }
+    if (S.unlocked && $('#view') && S.tab !== 'home') return goTab('home', true, -1);
     if (Date.now() - lastBack < 2000) { const A = window.Capacitor?.Plugins?.App; return A ? A.exitApp() : undefined; }
     lastBack = Date.now(); toast('Press back again to exit');
   }

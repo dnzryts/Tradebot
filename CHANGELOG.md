@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.3] - 2026-11-25
+### Changed
+- Back button no longer steps through every previously visited tab. It closes an open dialog or panel, otherwise goes straight to Home; on Home, press twice to exit.
+
 ## [1.1.2] - 2026-11-25
 ### Changed
 - All confirmations (close positions, live orders, enabling live auto-trading, paper reset, sign out) use a themed in-app dialog instead of the plain Android system box. It has an icon, an explanation with P/L where relevant, and Cancel and confirm buttons. Back or tapping outside cancels.
