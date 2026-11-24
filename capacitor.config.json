@@ -1,0 +1,19 @@
+{
+  "appId": "com.tradebot.app",
+  "appName": "Tradebot",
+  "webDir": "www",
+  "backgroundColor": "#0b0f1a",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "LocalNotifications": {
+      "iconColor": "#6c8cff"
+    }
+  }
+}

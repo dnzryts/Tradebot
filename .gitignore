@@ -1,0 +1,10 @@
+node_modules/
+android/
+ios/
+*.apk
+*.aab
+*.jks
+*.keystore
+*.b64
+.env
+.DS_Store

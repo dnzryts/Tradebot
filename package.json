@@ -1,0 +1,28 @@
+{
+  "name": "tradebot",
+  "version": "1.0.0",
+  "description": "Android MT5 auto-trading app with market-sentiment analysis, portfolio tracking, fingerprint lock and themes.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "serve": "npx --yes http-server www -p 8080 -c-1",
+    "android:init": "npx cap add android && npx capacitor-assets generate --android && node scripts/patch-android.mjs && npx cap sync android",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android",
+    "apk:debug": "cd android && ./gradlew assembleDebug",
+    "apk:release": "cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/local-notifications": "^8.3.0",
+    "@capgo/capacitor-native-biometric": "^8.9.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
