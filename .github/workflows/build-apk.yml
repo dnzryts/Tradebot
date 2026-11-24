@@ -53,6 +53,13 @@ jobs:
           ./gradlew --no-daemon assembleDebug
           cp app/build/outputs/apk/debug/app-debug.apk ../Tradebot-debug.apk
 
+      - name: Build unsigned release APK (for external signing)
+        if: ${{ env.HAS_KEYSTORE != 'true' }}
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release-unsigned.apk ../Tradebot-release-unsigned.apk
+
       # Optional signed release build. Add these repository secrets to enable it:
       # ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
       - name: Build signed release APK
@@ -86,6 +93,7 @@ jobs:
           # Prefer the release build signed with your permanent key (installs as an update every time)
           if [ -f Tradebot-release.apk ]; then cp Tradebot-release.apk /tmp/apkbranch/Tradebot.apk; KIND="release (signed with your key)"; else cp Tradebot-debug.apk /tmp/apkbranch/Tradebot.apk; KIND="debug (temporary key: add signing secrets, see docs/BUILDING.md)"; fi
           cp Tradebot-debug.apk /tmp/apkbranch/
+          [ -f Tradebot-release-unsigned.apk ] && cp Tradebot-release-unsigned.apk /tmp/apkbranch/ || true
           cd /tmp/apkbranch
           printf '# Tradebot APK\n\nLatest build of `main` (%s, run #%s): **%s**\n\nDownload: [Tradebot.apk](Tradebot.apk)\n' "${GITHUB_SHA::7}" "$GITHUB_RUN_NUMBER" "$KIND" > README.md
           git init -q -b apk
