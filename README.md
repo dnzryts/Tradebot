@@ -44,6 +44,8 @@
 
 ## Get the APK
 
+**Direct download:** [Tradebot-debug.apk](../../raw/apk/Tradebot-debug.apk) (latest build of `main`, kept on the `apk` branch).
+
 **Option A: GitHub Actions (no tools needed)**
 1. Every push to `main` runs **Build Android APK**. Open the **Actions** tab, pick the latest run, and download the **Tradebot-apk** artifact (`Tradebot-debug.apk`).
 2. Push a tag such as `v1.0.0` to also publish the APK on the **Releases** page.
