@@ -66,6 +66,18 @@ Everything works in Paper mode. Fingerprint is simulated, and secrets go to `loc
 - Locks the main activity to portrait
 - Sets `versionCode` and `versionName`
 
+## Signing an APK yourself (without CI secrets)
+
+When the signing secrets are not set, each build also publishes `Tradebot-release-unsigned.apk` to the `apk` branch. Sign it locally with your key (requires `pip install cryptography`):
+
+```bash
+keytool -importkeystore -srckeystore tradebot-release.jks -destkeystore tradebot-release.p12 -deststoretype pkcs12
+python3 scripts/apksign.py sign Tradebot-release-unsigned.apk Tradebot.apk tradebot-release.p12 '<password>'
+python3 scripts/apksign.py verify Tradebot.apk
+```
+
+`apksign.py` implements APK Signature Scheme v2 (RSA/SHA-256), which works on Android 7+. Google's `apksigner` gives the same result.
+
 ## Why a permanent signing key matters
 
 Without the signing secrets, each GitHub runner signs the APK with a new temporary debug key. Android then refuses to install the next build over the old one, because a changed signature looks like tampering. After you add the four secrets above, `Tradebot.apk` on the `apk` branch is always the release build signed with your key, so updates install in place.
