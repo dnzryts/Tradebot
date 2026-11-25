@@ -363,3 +363,12 @@ html, body { overflow-x: hidden; }
 .icon-btn.eye svg.i { width: 21px; height: 21px; }
 .icon-btn.eye.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
 html.private #eq { display: none; }
+
+/* ===== Tap-only opacity control (replaces the slider) ===== */
+.stepper { display: inline-flex; align-items: center; gap: 4px; background: var(--card2); border-radius: 14px; padding: 4px; }
+.stepper button { width: 38px; height: 34px; border-radius: 10px; font-size: 20px; font-weight: 700; background: var(--card); color: var(--text); }
+.stepper button:disabled { opacity: .35; }
+.stepper b { min-width: 52px; text-align: center; font-size: 15px; }
+.presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+.presets button { padding: 9px 0; border-radius: 11px; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--card2); border: 1.5px solid transparent; }
+.presets button.on { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--card2)); }

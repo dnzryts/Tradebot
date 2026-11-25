@@ -704,8 +704,9 @@
       <h3>Appearance</h3><div class="card">
         <div class="seg" id="tmode3"><button data-a="system" class="${S.theme === 'system' ? 'on' : ''}">System</button><button data-a="light" class="${S.theme === 'light' ? 'on' : ''}">Light</button><button data-a="dark" class="${S.theme !== 'system' && S.theme !== 'light' ? 'on' : ''}">Dark</button></div>
         <p class="hint" id="thint">${S.theme === 'system' ? `Following your phone: currently <b>${systemIsDark() ? 'dark' : 'light'}</b>.` : S.theme === 'light' ? 'Always light.' : 'Always dark.'}</p>
-        <div class="field" style="margin:14px 0 0"><div class="row between"><label style="margin:0 0 4px 4px">Dashboard card opacity</label><b class="mono" id="heroav">${Math.round(S.heroAlpha * 100)}%</b></div>
-          <input type="range" id="heroa" min="15" max="100" step="5" value="${Math.round(S.heroAlpha * 100)}">
+        <div class="field" style="margin:16px 0 0"><div class="row between"><label style="margin:0 0 0 4px">Dashboard card opacity</label>
+            <div class="stepper"><button id="hminus" aria-label="Less opaque">−</button><b class="mono" id="heroav">${Math.round(S.heroAlpha * 100)}%</b><button id="hplus" aria-label="More opaque">+</button></div></div>
+          <div class="presets" id="hpresets">${[25, 50, 65, 80, 100].map(v => `<button data-v="${v}" class="${Math.round(S.heroAlpha * 100) === v ? 'on' : ''}">${v}%</button>`).join('')}</div>
           <div class="hero-preview card hero ${S.heroAlpha < .7 ? 'soft' : ''}" id="heropv"><div class="row between"><span class="muted">Equity preview</span><span class="chip">PAPER</span></div><div class="mono" id="heropvv" style="font-size:22px;font-weight:800;margin-top:4px">${money(10000)}</div></div></div>
       </div>
       <h3>Edit profile</h3><div class="card">
@@ -734,7 +735,18 @@
     $('#conn').onclick = openConnect;
     const themeUi = () => viewProfile(v);
     $$('#tmode3 button').forEach(b => b.onclick = () => { const a = b.dataset.a; setTheme(a === 'dark' ? 'midnight' : a); themeUi(); });
-    const ha = $('#heroa'); if (ha) ha.oninput = () => { S.heroAlpha = +ha.value / 100; $('#heroav').textContent = ha.value + '%'; applyHero(); save(); };
+    // Tap-only controls (no slider), so scrolling through Profile can never change the value by accident
+    const setHero = pct => {
+      pct = Math.max(15, Math.min(100, Math.round(pct / 5) * 5)); S.heroAlpha = pct / 100; save(); applyHero();
+      $('#heroav').textContent = pct + '%'; $('#hminus').disabled = pct <= 15; $('#hplus').disabled = pct >= 100;
+      $$('#hpresets button').forEach(b => b.classList.toggle('on', +b.dataset.v === pct));
+    };
+    if ($('#hminus')) {
+      $('#hminus').onclick = () => setHero(S.heroAlpha * 100 - 5);
+      $('#hplus').onclick = () => setHero(S.heroAlpha * 100 + 5);
+      $$('#hpresets button').forEach(b => b.onclick = () => setHero(+b.dataset.v));
+      setHero(S.heroAlpha * 100);
+    }
     let risk = p.riskProfile;
     $$('#prisk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#prisk button').forEach(x => x.classList.toggle('on', x === b)); });
     $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };

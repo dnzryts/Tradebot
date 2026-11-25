@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.6.2] - 2026-11-25
+### Changed
+- **Dashboard card opacity uses tap-only controls instead of a slider**, so scrolling through Profile can't change it by accident. There are − / + buttons (5% steps, 15–100%, disabled at the limits) and one-tap presets: 25%, 50%, 65%, 80%, 100%.
+
 ## [1.6.1] - 2026-11-25
 ### Fixed
 - **The eye button no longer reloads the screen.** Hiding or showing amounts now patches only the values in place, with the same flicker-free update as the live refresh. Scroll position, charts, open panels and animations are untouched.
