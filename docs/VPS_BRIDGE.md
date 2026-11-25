@@ -135,5 +135,6 @@ All responses are JSON. Every endpoint except `/health` needs `Authorization: Be
 | GET | `/symbols/{s}/candles?timeframe=15m&limit=200` | OHLC candles (`1m 5m 15m 30m 1h 4h 1d`) |
 | POST | `/trade` | `{symbol, side: BUY\|SELL, volume, stopLoss?, takeProfit?, comment?}` market order |
 | POST | `/positions/{id}/close` | Close a position at market; optional body `{comment}` records why (e.g. `TBX Bot: sentiment flip`) |
+| POST | `/positions/{id}/modify` | Move stop-loss / take-profit, body `{stopLoss, takeProfit}` (bridge 1.3.0+, used by *Protect profits*) |
 
 Tradebot's own orders are marked with magic number `20261124` and a `TB …` comment. Order filling mode (FOK, IOC or RETURN) is chosen per symbol, retrying automatically if the broker rejects one.

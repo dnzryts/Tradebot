@@ -30,7 +30,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 BOT_MAGIC = 20261124          # magic number stamped on Tradebot's own orders
 HERE = Path(__file__).resolve().parent
 CONFIG = json.loads((HERE / "config.json").read_text(encoding="utf-8")) if (HERE / "config.json").exists() else {}
@@ -298,6 +298,33 @@ def close(ticket: int, body: Optional[CloseIn] = None):
     result = send(req, sym)
     log.info("CLOSE #%s %s %s -> %s", ticket, p.symbol, p.volume, result["stringCode"])
     return result
+
+
+class ModifyIn(BaseModel):
+    stopLoss: Optional[float] = None
+    takeProfit: Optional[float] = None
+
+
+@app.post("/positions/{ticket}/modify", dependencies=[Depends(auth)])
+@mt5_call
+def modify(ticket: int, m: ModifyIn):
+    """Move a position's stop-loss / take-profit (used by the app's trailing stop)."""
+    found = mt5.positions_get(ticket=ticket)
+    if not found:
+        raise HTTPException(404, f"Position {ticket} not found (already closed?)")
+    p = found[0]
+    sym = select_symbol(p.symbol)
+    req = {"action": mt5.TRADE_ACTION_SLTP, "symbol": p.symbol, "position": p.ticket, "magic": p.magic,
+           "sl": round(float(m.stopLoss), sym.digits) if m.stopLoss is not None else p.sl,
+           "tp": round(float(m.takeProfit), sym.digits) if m.takeProfit is not None else p.tp}
+    res = mt5.order_send(req)
+    if res is None:
+        raise HTTPException(502, f"order_send failed: {mt5.last_error()}")
+    code = RETCODE_NAMES.get(res.retcode, str(res.retcode))
+    if res.retcode not in OK_CODES and res.retcode != 10025:   # 10025 = no changes
+        raise HTTPException(400, f"{code}: {res.comment}")
+    log.info("MODIFY #%s %s sl=%s tp=%s -> %s", ticket, p.symbol, req["sl"], req["tp"], code)
+    return {"stringCode": code, "stopLoss": req["sl"], "takeProfit": req["tp"]}
 
 
 if __name__ == "__main__":

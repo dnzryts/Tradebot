@@ -15,9 +15,9 @@
   const RISK_PRESETS = {
     // Tuned in v1.8.0 by replaying the bot over 16 months of real MT5 M1 bars (EURUSD, XAUUSD, US500).
     // The old presets (tight 1.5–2 ATR stops) lost: spread ate most trades. See docs/STRATEGY.md.
-    conservative: { label: 'Conservative', riskPct: 0.5, threshold: 25, minConfidence: 80, maxPositions: 2, dailyLossPct: 2, slAtr: 4, tpAtr: 7, timeframe: '1h', htfFilter: true, exitOnFlip: true },
-    balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 25, minConfidence: 80, maxPositions: 3, dailyLossPct: 4, slAtr: 4, tpAtr: 7, timeframe: '15m', htfFilter: true, exitOnFlip: true },
-    aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 20, minConfidence: 75, maxPositions: 5, dailyLossPct: 8, slAtr: 3.5, tpAtr: 6, timeframe: '15m', htfFilter: true, exitOnFlip: true },
+    conservative: { label: 'Conservative', riskPct: 0.5, threshold: 25, minConfidence: 80, maxPositions: 2, dailyLossPct: 2, slAtr: 4, tpAtr: 7, timeframe: '1h', htfFilter: true, exitOnFlip: true, trailing: true },
+    balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 25, minConfidence: 80, maxPositions: 3, dailyLossPct: 4, slAtr: 4, tpAtr: 7, timeframe: '15m', htfFilter: true, exitOnFlip: true, trailing: true },
+    aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 20, minConfidence: 75, maxPositions: 5, dailyLossPct: 8, slAtr: 3.5, tpAtr: 6, timeframe: '15m', htfFilter: true, exitOnFlip: true, trailing: true },
   };
   /* Trading experience: how much of Auto-Trade is shown. Beginners only get tested presets. */
   const LEVELS = {
@@ -25,10 +25,10 @@
     moderate: { label: 'Moderate', icon: '📊', desc: 'Choose strategy, symbols, timeframe, $ targets and money management. Fine-tuning sliders stay hidden.' },
     pro: { label: 'Pro trader', icon: '🎯', desc: 'Every setting: entry threshold, confidence, ATR multiples, 5-minute charts and scan interval.' },
   };
-  const TESTED_KEYS = ['timeframe', 'threshold', 'minConfidence', 'slAtr', 'tpAtr', 'htfFilter', 'exitOnFlip'];
+  const TESTED_KEYS = ['timeframe', 'threshold', 'minConfidence', 'slAtr', 'tpAtr', 'htfFilter', 'exitOnFlip', 'trailing'];
   const HTF = { '5m': '1h', '15m': '1h', '1h': '4h', '4h': '1d' };
   const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
-  const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1;
+  const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1, TRAIL_R = 1;
   const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
@@ -45,7 +45,7 @@
     if (b.targetMode !== 'atr') diffs.push('targetMode');
     return { match: diffs.length ? null : match, nearest: match || (RISK_PRESETS[b.profile] ? b.profile : 'balanced'), diffs };
   }
-  const DIFF_LABEL = { timeframe: 'timeframe', threshold: 'entry threshold', minConfidence: 'confidence', slAtr: 'stop-loss', tpAtr: 'take-profit', htfFilter: 'trend filter', exitOnFlip: 'flip exit', strategy: 'strategy (tested on Auto)', targetMode: 'fixed $ targets (tested on ATR)' };
+  const DIFF_LABEL = { timeframe: 'timeframe', threshold: 'entry threshold', minConfidence: 'confidence', slAtr: 'stop-loss', tpAtr: 'take-profit', htfFilter: 'trend filter', exitOnFlip: 'flip exit', trailing: 'protect profits', strategy: 'strategy (tested on Auto)', targetMode: 'fixed $ targets (tested on ATR)' };
   function applyTested(k) {
     if (level() === 'beginner' && k === 'aggressive') k = 'balanced';
     Object.assign(S.bot, RISK_PRESETS[k], { profile: k, strategy: 'auto', targetMode: 'atr', botV: 2 });
@@ -700,6 +700,7 @@
         ${slider('slAtr', 'Stop-loss (× ATR)', .5, 5, .1)}
         ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}</div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Follow the bigger trend</div><div class="sub" id="htfsub">Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down</div></div><label class="toggle"><input type="checkbox" id="htf" ${b.htfFilter ? 'checked' : ''}><span></span></label></div>
+        <div class="row between" style="margin-bottom:14px"><div><div class="title">Protect profits</div><div class="sub">Trailing stop: once a trade is up by the amount it risks, its stop-loss follows the price at that distance, locking in profit</div></div><label class="toggle"><input type="checkbox" id="trail" ${b.trailing ? 'checked' : ''}><span></span></label></div>
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
       </div></div>
       <div class="${atLeast('moderate') ? '' : 'hidden'}">
@@ -735,6 +736,7 @@
     $$('#preset button').forEach(x => x.onclick = () => { applyTested(x.dataset.k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; save(); analyseAll(); });
+    $('#trail').onchange = e => { b.trailing = e.target.checked; save(); log(b.trailing ? 'Protect profits on (trailing stop)' : 'Protect profits off'); };
     $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
     bindTested(v);
     $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); });
@@ -785,7 +787,7 @@
     const head = `<div class="row between"><span class="sub">${lvl.icon} ${lvl.label} mode</span><button class="sub linkbtn" data-guide>Getting started guide ›</button></div>`;
     if (t.match) { const p = RISK_PRESETS[t.match];
       return `${head}<div class="row" style="gap:10px;margin-top:8px"><span class="okdot">✓</span><div><div class="title">Tested ${p.label} settings</div>
-        <div class="sub">${p.timeframe} · ±${p.threshold} · ${p.minConfidence}% · SL ${p.slAtr} / TP ${p.tpAtr} ATR · trend filter on</div></div></div>`; }
+        <div class="sub">${p.timeframe} · ±${p.threshold} · ${p.minConfidence}% · SL ${p.slAtr} / TP ${p.tpAtr} ATR · trend filter · profit protection</div></div></div>`; }
     return `${head}<div class="row" style="gap:10px;margin-top:8px"><span class="okdot warn">!</span><div class="grow"><div class="title">Custom settings · not tested</div>
       <div class="sub">Differs from tested ${RISK_PRESETS[t.nearest].label}: ${t.diffs.map(d => DIFF_LABEL[d]).join(', ')}</div></div></div>
       <button class="btn small" id="resettested" style="margin-top:10px;width:100%">Reset to tested ${RISK_PRESETS[t.nearest].label}</button>`;
@@ -871,6 +873,7 @@
     let r = d.reason || '';
     const c = d.comment || '';
     if (!r) r = /\[sl/i.test(c) ? 'SL' : /\[tp/i.test(c) ? 'TP' : /\[so/i.test(c) ? 'Stop out' : /^TBX /.test(c) ? c.slice(4) : c ? 'Closed in MT5' : '';
+    if (r === 'SL' && d.profit > 0) return '🔒 Trailing stop (profit locked)';
     if (r === 'SL') return '🛑 Stop-loss hit';
     if (r === 'TP') return '🎯 Take-profit hit';
     if (/^Bot|^Basket/.test(r)) return '🤖 ' + r;
@@ -1413,6 +1416,7 @@
         else if (S.bot.exitOnFlip && bars[p.id] >= FLIP_MIN_BARS && (buy ? a.score <= -lim : a.score >= lim)) why = `Sentiment flipped (${a.score})`;
         if (why) { try { await S.broker.closePosition(p.id, st === 'reversion' ? 'Bot: back to mean' : 'Bot: sentiment flip'); log(`${why} on ${p.symbol}: closed ${signed(p.profit)}`, cls(p.profit)); } catch (e) { log(`Close ${p.symbol} failed: ${e.message}`, 'down'); } }
       }
+      await protectProfits();
       // Entries
       await poll();
       let open = S.positions.filter(p => isBot(p)).length;
@@ -1434,6 +1438,39 @@
       await poll();
     } catch (e) { log('Bot error: ' + e.message, 'down'); }
     finally { botBusy = false; }
+  }
+  /* Protect profits (trailing stop). R = the trade's original stop distance. Once price is TRAIL_R × R in
+     profit, the stop-loss is moved to price − R (buy) / price + R (sell), and only ever tightened.
+     Tested on real M1 data: Balanced +41 R → +47 R (Jun 25–May 26) and +8.7 R → +12.5 R (Jan–May 25). */
+  async function protectProfits() {
+    const meta = (S.posMeta ||= store.get('posMeta') || {}), mine = S.positions.filter(isBot);
+    for (const p of mine) {
+      const dir = p.type === 'POSITION_TYPE_BUY' ? 1 : -1, open = p.openPrice;
+      if (!meta[p.id]) {  // first sight: the original risk distance
+        let r = p.stopLoss && (open - p.stopLoss) * dir > 0 ? Math.abs(open - p.stopLoss) : 0;
+        if (!r && p.takeProfit) r = Math.abs(p.takeProfit - open) * S.bot.slAtr / S.bot.tpAtr;
+        meta[p.id] = { r };
+      }
+    }
+    Object.keys(meta).forEach(id => { if (!mine.some(p => String(p.id) === id)) delete meta[id]; });
+    store.set('posMeta', meta);
+    if (!S.bot.trailing || S._noModify || typeof S.broker.modifyPosition !== 'function') return;
+    for (const p of mine) {
+      const r = meta[p.id]?.r, price = p.currentPrice; if (!r || !price) continue;
+      const dir = p.type === 'POSITION_TYPE_BUY' ? 1 : -1, gain = (price - p.openPrice) * dir;
+      if (gain < r * TRAIL_R) continue;
+      const d = S.specs?.[p.symbol]?.digits ?? S.digitsOf?.[p.symbol] ?? digits(p.symbol);
+      const sl = +(price - dir * r * TRAIL_R).toFixed(d);
+      if (p.stopLoss && (sl - p.stopLoss) * dir < r * .1) continue;   // only move in steps of ≥ 0.1 R
+      try {
+        await S.broker.modifyPosition(p.id, { stopLoss: sl, takeProfit: p.takeProfit });
+        const locked = p.profit * ((sl - p.openPrice) * dir) / gain;
+        log(`🔒 ${p.symbol}: stop moved to ${px(p.symbol, sl)} (locks ${signed(locked)})`, locked >= 0 ? 'up' : '');
+      } catch (e) {
+        if (/404|not found/i.test(e.message) && S.conn.mode === 'bridge') { S._noModify = true; log('Protect profits needs bridge 1.3.0: re-run install.ps1 on your VPS', 'down'); return; }
+        log(`Couldn't move ${p.symbol} stop: ${e.message}`, 'down');
+      }
+    }
   }
   function notify(title, body) { try { window.Capacitor?.Plugins?.LocalNotifications?.schedule({ notifications: [{ id: Date.now() % 2e9, title, body }] }); } catch { } }
 

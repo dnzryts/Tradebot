@@ -115,6 +115,7 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 - Broker-side **SL / TP** are always attached to the order
 - **Exit on sentiment flip** (optional): after the trade has lasted at least **4 closed candles**, a bot BUY closes when the closed-candle score falls to **−1.5 × threshold** or lower, and the reverse for a SELL. (Before v1.8 this fired at 0.6 × threshold on the forming candle, which closed most trades on noise.)
 - **Reversion** trades close when price returns to the middle Bollinger band
+- **Protect profits** (trailing stop, on in all presets): R is the trade's original stop distance. Once a trade is 1 R in profit, its stop-loss moves to 1 R behind the current price and is only ever tightened (in steps of at least 0.1 R). It runs on every bot scan. A trade stopped out this way shows as *🔒 Trailing stop (profit locked)*. On Own VPS it needs bridge 1.3.0.
 - Manual close at any time from Home or Portfolio
 
 ## 5. Kill-switches
@@ -153,6 +154,8 @@ DATA=/path/to/mt5bars node tools/backtest/matrix.js '{"from":"2025-06-01"}' case
 | **v1.8 Balanced** (15m) | 1,246 | 44% | **+41 R** | **+9 R** | 38 R |
 | v1.8 Conservative (1h) | 385 | 44% | +15 R | +17 R | 6 R |
 | v1.8 Aggressive (15m) | 1,484 | 42% | +29 R | +19 R | 54 R |
+| **v1.10 Balanced + Protect profits** (1 R trailing) | 1,299 | 50% | **+47 R** | **+12.5 R** | 39 R |
+| Balanced with an earlier TP (2 ATR) | 2,157 | 62% | −1 R | −15 R | 62 R |
 
 What this showed:
 - The v1.7 bot did about as well as **random entries**. Almost the whole loss was spread: it traded thousands of times on the forming 5-minute candle, and 58% of trades were closed by the sentiment-flip exit at a small loss.

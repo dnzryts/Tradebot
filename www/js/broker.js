@@ -152,6 +152,7 @@
       this.positions.push(p); this._save(); return { stringCode: 'TRADE_RETCODE_DONE', positionId: p.id };
     }
     async closePosition(id, reason = 'Manual') { const p = this.positions.find(x => x.id === id); if (p) { this._close(p, this._mark(p), reason); this._save(); } return { stringCode: 'TRADE_RETCODE_DONE' }; }
+    async modifyPosition(id, { stopLoss, takeProfit }) { const p = this.positions.find(x => x.id === id); if (!p) throw new Error('Position not found'); if (stopLoss != null) p.stopLoss = stopLoss; if (takeProfit != null) p.takeProfit = takeProfit; this._save(); return { stringCode: 'TRADE_RETCODE_DONE' }; }
     reset() { this.balance = 10000; this.positions = []; this.deals = []; this._save(); }
     destroy() { this._saveMarket(); clearInterval(this._timer); removeEventListener('pagehide', this._onHide); document.removeEventListener('visibilitychange', this._vis); }
   }
@@ -226,6 +227,7 @@
       if (!['TRADE_RETCODE_DONE', 'TRADE_RETCODE_PLACED', 'TRADE_RETCODE_DONE_PARTIAL'].includes(r.stringCode)) throw new Error(r.message || r.stringCode);
       return r;
     }
+    async modifyPosition(id, { stopLoss, takeProfit }) { const b = { actionType: 'POSITION_MODIFY', positionId: String(id) }; if (stopLoss != null) b.stopLoss = stopLoss; if (takeProfit != null) b.takeProfit = takeProfit; return this._req(`${this.client}/trade`, { method: 'POST', body: JSON.stringify(b) }); }
     async closePosition(id, reason = 'Manual') { return this._req(`${this.client}/trade`, { method: 'POST', body: JSON.stringify({ actionType: 'POSITION_CLOSE_ID', positionId: String(id), comment: ('TBX ' + reason).slice(0, 26) }) }); }
     destroy() {}
   }
@@ -269,6 +271,7 @@
     async trade({ symbol, side, volume, stopLoss, takeProfit, comment }) {
       return this._req('/trade', { method: 'POST', body: JSON.stringify({ symbol, side, volume, stopLoss: stopLoss ?? null, takeProfit: takeProfit ?? null, comment: comment || '' }) });
     }
+    async modifyPosition(id, { stopLoss, takeProfit }) { return this._req(`/positions/${encodeURIComponent(id)}/modify`, { method: 'POST', body: JSON.stringify({ stopLoss: stopLoss ?? null, takeProfit: takeProfit ?? null }) }); }
     async closePosition(id, reason = 'Manual') { return this._req(`/positions/${encodeURIComponent(id)}/close`, { method: 'POST', body: JSON.stringify({ comment: ('TBX ' + reason).slice(0, 31) }) }); }
     destroy() {}
   }

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0] - 2026-11-25
+### Added
+- **Protect profits (trailing stop)**, on in all tested presets. Once a bot trade is in profit by the amount it risks (1 R), its stop-loss follows the price 1 R behind, so a trade that runs up and then reverses still closes in profit. The stop only ever moves in the trade's favour. The take-profit stays where it was.
+  - Example: a 0.13-lot GBPUSD buy risking about $32. From about +$32 the stop starts moving up, locking in more profit as the price rises.
+  - Backtest with Balanced: +41 R → **+47 R** (Jun 2025 – May 2026) and +8.7 R → **+12.5 R** (Jan – May 2025), with the win rate rising from 44% to 50%. Taking profit earlier instead (at 2 ATR) did worse: −1 R and −15 R.
+  - Every move is written to the activity log, e.g. "🔒 EURUSD: stop moved to 1.08314 (locks +$19.20)". Trades closed this way show as **🔒 Trailing stop (profit locked)**, not "Stop-loss hit".
+  - The switch is in Auto-Trade → Strategy settings (Moderate and Pro levels). It is part of the tested-settings check.
+  - It runs while the bot is running and only manages bot trades.
+
+### Bridge 1.3.0
+- New `POST /positions/{id}/modify` (moves SL/TP). Re-run `install.ps1` on the VPS to update. With an older bridge, the app logs that Protect profits needs 1.3.0 and leaves stops unchanged.
+
 ## [1.9.0] - 2026-11-25
 ### Added
 - **Trading experience levels: Beginner, Moderate and Pro trader.** You pick one when creating your profile, and can change it any time in Profile → Trading experience.
