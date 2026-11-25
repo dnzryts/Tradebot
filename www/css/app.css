@@ -388,3 +388,9 @@ html.private #eq { display: none; }
 .mrow { cursor: pointer; }
 .star { width: 34px; height: 34px; flex: none; border-radius: 11px; font-size: 19px; line-height: 1; color: var(--muted); background: var(--card2); }
 .star.on { color: #f5c542; background: color-mix(in srgb, #f5c542 14%, var(--card2)); }
+
+/* ===== Native-style pager: neighbouring page shown during a swipe ===== */
+.peek { position: fixed; top: 0; left: 50%; width: 100%; max-width: 520px; height: 100vh; margin-left: min(-50vw, -260px); margin-left: calc(-1 * min(50vw, 260px));
+  overflow: hidden; z-index: 5; background: var(--bg); pointer-events: none; will-change: transform; }
+.peek .screen { animation: none !important; }
+#view .screen { backface-visibility: hidden; }

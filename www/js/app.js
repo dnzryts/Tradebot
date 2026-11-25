@@ -236,7 +236,7 @@
      Back closes the top dialog/sheet → otherwise jumps straight to Home → on Home, press twice to exit. */
   const navStack = [];
   const TAB_ORDER = ['home', 'markets', 'bot', 'portfolio', 'profile'];
-  function goTab(tab, fromBack = false, dir = 0) {
+  function goTab(tab, fromBack = false, dir = 0, noAnim = false) {
     if (!$('#view') || tab === S.tab) return;
     if (!dir) dir = Math.sign(TAB_ORDER.indexOf(tab) - TAB_ORDER.indexOf(S.tab));
     if (!fromBack) { navStack.push(S.tab); if (navStack.length > 30) navStack.shift(); }
@@ -244,51 +244,81 @@
     S.tab = tab;
     $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
     $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0); document.body.scrollTop = 0;
-    const scr = $('#view .screen'); if (scr) scr.classList.add(dir > 0 ? 'enter-right' : 'enter-left');
+    const scr = $('#view .screen'); if (scr && !noAnim) scr.classList.add(dir > 0 ? 'enter-right' : 'enter-left');
     if (tab === 'markets') analyseAll();
   }
-  /* Swipe between tabs: the page follows the finger, then commits on distance or a quick flick, or springs back. */
+  /* Swipe between tabs like a native pager: the neighbouring page is rendered beside the current one and both
+     move 1:1 with the finger. On release the slide finishes from where the finger left it, at the finger's speed. */
   (function setupSwipeTabs() {
-    let sx = null, sy = 0, mode = null, scr = null, dx = 0, lastX = 0, lastT = 0, vx = 0;
+    const VIEWS = { home: viewHome, markets: viewMarkets, bot: viewBot, portfolio: viewPortfolio, profile: viewProfile };
+    let sx = null, sy = 0, mode = null, cur = null, peek = null, peekDir = 0, dx = 0, lastX = 0, lastT = 0, vx = 0, settling = false;
+    const W = () => ($('#app')?.clientWidth || innerWidth);
     const canScrollX = el => el && el.scrollWidth > el.clientWidth + 2;
-    const reset = () => { if (scr) { scr.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s'; scr.style.transform = ''; scr.style.opacity = ''; const el = scr; setTimeout(() => { el.style.transition = ''; el.style.willChange = ''; }, 240); } };
+    const neighbour = dir => TAB_ORDER[TAB_ORDER.indexOf(S.tab) + dir];
+    function makePeek(dir) {
+      dropPeek();
+      const tab = neighbour(dir); if (!tab) return;
+      peek = document.createElement('div'); peek.className = 'peek'; peek.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(peek);
+      const saveTab = S.tab; S.tab = tab;                       // render the neighbour exactly as it will look
+      try { VIEWS[tab](peek); } catch { } finally { S.tab = saveTab; }
+      peekDir = dir; peek.style.transform = `translate3d(${dir * W() + dx}px,0,0)`;
+    }
+    function dropPeek() { if (peek) { peek.remove(); peek = null; peekDir = 0; } }
+    function place(x) {
+      cur.style.transform = `translate3d(${x}px,0,0)`;
+      if (peek) peek.style.transform = `translate3d(${peekDir * W() + x}px,0,0)`;
+    }
+    function animate(x, ms, done) {
+      const tr = `transform ${ms}ms cubic-bezier(.25,.8,.3,1)`;
+      cur.style.transition = tr; if (peek) peek.style.transition = tr;
+      place(x); setTimeout(done, ms);
+    }
     document.addEventListener('touchstart', e => {
       sx = null; mode = null;
-      if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
+      if (settling || e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
       const t = e.touches[0];
-      if (t.clientX < 20 || t.clientX > innerWidth - 20) return;            // screen edges belong to Android's back gesture
+      if (t.clientX < 16 || t.clientX > innerWidth - 16) return;            // screen edges belong to Android's back gesture
       if (e.target.closest('input, textarea, select, .nav, .keypad')) return;
-      const sc = e.target.closest('.tslider, .tabs-mini'); if (sc && canScrollX(sc)) return; // let real horizontal lists scroll
-      scr = $('#view .screen'); if (!scr) return;
+      const sc = e.target.closest('.tslider, .tabs-mini'); if (sc && canScrollX(sc)) return; // real horizontal lists keep scrolling
+      cur = $('#view .screen'); if (!cur) return;
       sx = lastX = t.clientX; sy = t.clientY; lastT = performance.now(); dx = 0; vx = 0;
     }, { passive: true });
     document.addEventListener('touchmove', e => {
       if (sx == null) return;
       const t = e.touches[0], ddx = t.clientX - sx, ddy = t.clientY - sy;
       if (!mode) {
-        if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
-        mode = Math.abs(ddx) > Math.abs(ddy) * 1.1 ? 'h' : 'v';
-        if (mode === 'h') { S._dragging = true; scr.style.transition = 'none'; scr.style.willChange = 'transform, opacity'; }
+        if (Math.abs(ddx) < 5 && Math.abs(ddy) < 5) return;
+        mode = Math.abs(ddx) > Math.abs(ddy) ? 'h' : 'v';
+        if (mode === 'h') { S._dragging = true; cur.style.transition = 'none'; cur.style.willChange = 'transform'; } // page stays exactly under the finger
+        else return;
       }
       if (mode !== 'h') return;
-      if (e.cancelable) e.preventDefault();                                  // no vertical scrolling while swiping sideways
-      const now = performance.now(); vx = (t.clientX - lastX) / Math.max(1, now - lastT); lastX = t.clientX; lastT = now;
-      const i = TAB_ORDER.indexOf(S.tab), edge = (ddx > 0 && i === 0) || (ddx < 0 && i === TAB_ORDER.length - 1);
-      dx = edge ? ddx * .25 : ddx;                                         // rubber-band at the first/last tab
-      scr.style.transform = `translateX(${dx}px)`;
-      scr.style.opacity = String(1 - Math.min(Math.abs(dx) / innerWidth, 1) * .45);
+      if (e.cancelable) e.preventDefault();
+      const now = performance.now(), raw = t.clientX - sx;
+      vx = .8 * ((t.clientX - lastX) / Math.max(1, now - lastT)) + .2 * vx; lastX = t.clientX; lastT = now;
+      const dir = raw < 0 ? 1 : -1;
+      if (raw !== 0 && dir !== peekDir) makePeek(dir);                  // render the page we're moving towards
+      dx = peek ? raw : raw * .3;                                       // no neighbour (first/last tab): resist
+      place(dx);
     }, { passive: false });
     const end = () => {
       if (sx == null) return; sx = null;
       if (mode !== 'h') { mode = null; return; }
-      mode = null; S._dragging = false;
-      const i = TAB_ORDER.indexOf(S.tab), dir = dx < 0 ? 1 : -1, j = i + dir;
-      const flick = Math.abs(vx) > .3 && Math.sign(vx) === Math.sign(dx) && Math.abs(dx) > 24;
-      if (j >= 0 && j < TAB_ORDER.length && (Math.abs(dx) > innerWidth * .2 || flick)) {
-        scr.style.transition = 'transform .14s ease-in, opacity .14s ease-in';
-        scr.style.transform = `translateX(${-dir * innerWidth * .4}px)`; scr.style.opacity = '0';
-        setTimeout(() => goTab(TAB_ORDER[j], false, dir), 120);
-      } else reset();
+      mode = null;
+      const w = W(), commit = peek && (Math.abs(dx) > w * .25 || (Math.abs(vx) > .25 && Math.sign(vx) === Math.sign(dx)));
+      if (commit) {
+        const target = neighbour(peekDir), to = -peekDir * w, remain = Math.abs(to - dx);
+        const ms = Math.round(Math.max(80, Math.min(180, remain / Math.max(Math.abs(vx), 2.2))));
+        settling = true;
+        animate(to, ms, () => {
+          goTab(target, false, peekDir, true);                          // same content the peek showed, so it swaps invisibly
+          dropPeek(); S._dragging = false; settling = false;
+        });
+      } else {
+        settling = true;
+        animate(0, 160, () => { cur.style.transition = ''; cur.style.transform = ''; cur.style.willChange = ''; dropPeek(); S._dragging = false; settling = false; });
+      }
     };
     document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
   })();

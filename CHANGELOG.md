@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1] - 2026-11-25
+### Changed
+- **Native-style page swiping with no delay.**
+  - The neighbouring page is rendered beside the current one, and both move exactly 1:1 with the finger (no fade).
+  - On release, the slide finishes from where the finger left it, at the finger's speed (about 80–180 ms), and the new page is already in place, with no second animation.
+  - The start threshold is 5 px. A short drag springs back. The first and last tabs resist.
+
 ## [1.7.0] - 2026-11-25
 ### Added
 - **Markets: full symbol lists with categories and search.**
