@@ -276,3 +276,5 @@ html, body { overflow-x: hidden; }
 .money span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; pointer-events: none; }
 .money .input { padding-left: 38px; font-weight: 700; }
 .hint b.up { color: var(--up); } .hint b.down { color: var(--down); }
+.swatches.three { grid-template-columns: repeat(3, 1fr); }
+#tmode3 { margin-bottom: 4px; }

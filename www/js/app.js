@@ -23,7 +23,8 @@
 
   const S = {
     profile: store.get('profile'),               // {name, email, pinHash, biometric, riskProfile, color, created}
-    theme: store.get('theme') || 'midnight',
+    theme: store.get('themeV2') ? (store.get('theme') || 'system') : 'system',   // 1.4: follow the phone's light/dark setting by default
+    systemDark: store.get('systemDark') || 'midnight',
     onboarded: store.get('onboarded') || false,
     conn: store.get('conn') || { mode: 'demo' },  // {mode:'demo'|'mt5', accountId, region, login, server}
     bot: { ...DEFAULT_BOT, ...(store.get('bot') || {}) },
@@ -44,10 +45,26 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const cls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
   const sentCls = s => s >= 25 ? 'up' : s <= -25 ? 'down' : 'neutral';
-  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); };
+  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('systemDark', S.systemDark); };
   let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
   function log(msg, kind = '') { S.log.unshift({ t: Date.now(), msg, kind }); S.log = S.log.slice(0, 200); store.set('log', S.log); const el = $('#botlog'); if (el) el.innerHTML = logHtml(); }
-  function setTheme(t) { S.theme = t; document.documentElement.dataset.theme = t; document.querySelector('meta[name=theme-color]').content = THEMES[t][0]; save(); }
+  /* Theme: 'system' follows the phone's light/dark mode (dark uses the chosen dark theme). */
+  const darkMQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+  const systemIsDark = () => !darkMQ || darkMQ.matches;
+  const resolvedTheme = () => S.theme === 'system' ? (systemIsDark() ? S.systemDark : 'light') : S.theme;
+  function applyTheme() {
+    const t = resolvedTheme(), bg = THEMES[t][0];
+    if (document.documentElement.dataset.theme !== t) {
+      document.documentElement.dataset.theme = t;
+      if (S.unlocked && $('#view')) { $('#view').dataset.view = ''; renderView(); } // redraw charts with the new colours
+    }
+    document.querySelector('meta[name=theme-color]').content = bg;
+    // Native status/navigation bar area: background colour + light or dark icons
+    try { window.Capacitor?.Plugins?.ThemeBars?.set({ color: bg, light: t === 'light' }); } catch { }
+  }
+  function setTheme(t) { S.theme = t; store.set('themeV2', true); save(); applyTheme(); }
+  darkMQ?.addEventListener?.('change', () => { if (S.theme === 'system') applyTheme(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(applyTheme, 150); });
 
   /* ---------------- Flicker-free DOM patching ----------------
      First paint uses innerHTML; later refreshes diff the new markup against the live DOM and
@@ -548,7 +565,12 @@
       <h3>Trading account</h3><div class="card"><div class="row between"><div class="row"><div class="avatar">${S.conn.mode === 'bridge' ? 'VPS' : isLive() ? 'MT5' : 'SIM'}</div>
         <div><div class="title">${isLive() ? `MT5 · ${esc(S.conn.login || S.conn.accountId?.slice(0, 8))}` : 'Paper trading'}</div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
         <button class="btn small" id="conn">${isLive() ? 'Manage' : 'Connect MT5'}</button></div></div>
-      <h3>Theme</h3><div class="swatches">${Object.entries(THEMES).map(([k, c]) => `<button class="swatch ${S.theme === k ? 'on' : ''}" data-t="${k}"><i style="background:linear-gradient(135deg,${c[0]} 0 40%,${c[1]} 40% 70%,${c[2]} 70%)"></i>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>
+      <h3>Appearance</h3><div class="card">
+        <div class="seg" id="tmode3"><button data-a="system" class="${S.theme === 'system' ? 'on' : ''}">System</button><button data-a="light" class="${S.theme === 'light' ? 'on' : ''}">Light</button><button data-a="dark" class="${S.theme !== 'system' && S.theme !== 'light' ? 'on' : ''}">Dark</button></div>
+        <p class="hint" id="thint">${S.theme === 'system' ? `Following your phone: currently <b>${systemIsDark() ? 'dark' : 'light'}</b>.` : S.theme === 'light' ? 'Always light.' : 'Always dark.'}</p>
+        <div id="darkpick" class="${S.theme === 'light' ? 'hidden' : ''}"><div class="sub" style="margin:10px 2px 8px">Dark style</div>
+        <div class="swatches three">${['midnight', 'aurora', 'gold'].map(k => { const c = THEMES[k]; const on = S.theme === 'system' ? S.systemDark === k : S.theme === k; return `<button class="swatch ${on ? 'on' : ''}" data-t="${k}"><i style="background:linear-gradient(135deg,${c[0]} 0 40%,${c[1]} 40% 70%,${c[2]} 70%)"></i>${k[0].toUpperCase() + k.slice(1)}</button>`; }).join('')}</div></div>
+      </div>
       <h3>Edit profile</h3><div class="card">
         <div class="field"><label>Display name</label><input class="input" id="pname" value="${esc(p.name)}" maxlength="24"></div>
         <div class="field"><label>Email</label><input class="input" id="pemail" value="${esc(p.email)}"></div>
@@ -565,7 +587,9 @@
     </div>`;
     bindTop();
     $('#conn').onclick = openConnect;
-    $$('.swatch').forEach(b => b.onclick = () => { setTheme(b.dataset.t); $$('.swatch').forEach(x => x.classList.toggle('on', x === b)); });
+    const themeUi = () => viewProfile(v);
+    $$('#tmode3 button').forEach(b => b.onclick = () => { const a = b.dataset.a; setTheme(a === 'dark' ? S.systemDark : a); themeUi(); });
+    $$('#darkpick .swatch').forEach(b => b.onclick = () => { S.systemDark = b.dataset.t; if (S.theme !== 'system') S.theme = b.dataset.t; setTheme(S.theme); themeUi(); });
     let risk = p.riskProfile;
     $$('#prisk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#prisk button').forEach(x => x.classList.toggle('on', x === b)); });
     $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };
@@ -926,7 +950,7 @@
     else if (S.profile && S.unlocked && Date.now() - hiddenAt > 60000 && hiddenAt) { S.unlocked = false; render(); }
   });
 
-  setTheme(S.theme);
+  applyTheme();
   render();
   window.Tradebot = S; // debugging
 })();

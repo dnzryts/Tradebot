@@ -36,4 +36,56 @@ if (!st.includes('@color/tb_window')) {
   fs.writeFileSync(stylesPath, st);
 }
 
+// Native helper so the web app can colour the status/navigation bar area to match its theme
+// (System / Light / Dark). Registered in MainActivity before the bridge starts.
+const javaDir = 'android/app/src/main/java/com/tradebot/app';
+fs.writeFileSync(`${javaDir}/ThemeBarsPlugin.java`, `package com.tradebot.app;
+
+import android.graphics.Color;
+import android.view.Window;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+@CapacitorPlugin(name = "ThemeBars")
+public class ThemeBarsPlugin extends Plugin {
+    @PluginMethod
+    public void set(PluginCall call) {
+        final String color = call.getString("color", "#0B0F1A");
+        final Boolean lightIcons = call.getBoolean("light", false);
+        getBridge().executeOnMainThread(() -> {
+            try {
+                int c = Color.parseColor(color);
+                Window w = getActivity().getWindow();
+                w.getDecorView().setBackgroundColor(c);
+                getBridge().getWebView().setBackgroundColor(c);
+                WindowInsetsControllerCompat ic = WindowCompat.getInsetsController(w, w.getDecorView());
+                boolean light = lightIcons != null && lightIcons;
+                ic.setAppearanceLightStatusBars(light);
+                ic.setAppearanceLightNavigationBars(light);
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("ThemeBars failed: " + e.getMessage());
+            }
+        });
+    }
+}
+`);
+fs.writeFileSync(`${javaDir}/MainActivity.java`, `package com.tradebot.app;
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(ThemeBarsPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}
+`);
+
 console.log(`Patched Android project → v${pkg.version} (${code})`);
