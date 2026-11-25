@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1] - 2026-11-25
+### Fixed
+- **Paper trading: wrong closed-trade values after reopening the app.** Each new session re-seeded the simulated market from its original base prices, so open positions saw a sudden price jump and closed at their SL/TP with distorted P/L. The simulated market (300 candles per symbol plus trend regime) is now saved on every new candle and when the app goes to the background, then restored on launch, so prices continue exactly where they left off.
+- Paper SL/TP now fill at the stop or target price itself instead of at an overshooting tick, so results match the planned risk and reward.
+
+MT5 accounts (MetaApi and Own VPS) were not affected: their prices and history come from the broker.
+
 ## [1.4.0] - 2026-11-25
 ### Added
 - **Appearance: System / Light / Dark.** *System* (now the default) follows the phone's light or dark mode live. A *Dark style* picker (Midnight, Aurora, Gold) sets which dark theme is used.

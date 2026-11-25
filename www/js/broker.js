@@ -21,7 +21,19 @@
       const s = store.get('demo') || {};
       this.balance = s.balance ?? 10000; this.positions = s.positions || []; this.deals = s.deals || []; this.nextId = s.nextId || 1001;
       this.series = {}; this.regime = {};
-      Object.keys(SPECS).forEach(sym => this._seed(sym));
+      // Restore the simulated market exactly where the last session left it (fallback: fresh seed).
+      const m = store.get('demo_market');
+      Object.keys(SPECS).forEach(sym => {
+        const rows = m?.v === 1 && m.series?.[sym];
+        if (rows && rows.length >= 60) {
+          this.series[sym] = rows.map(([time, open, high, low, close, tickVolume]) => ({ time, open, high, low, close, tickVolume }));
+          this.regime[sym] = m.regime?.[sym] || { drift: 0, left: 30, ticks: 0 };
+        } else this._seed(sym);
+      });
+      if (!m) this._saveMarket();
+      this._onHide = () => this._saveMarket();
+      addEventListener('pagehide', this._onHide);
+      document.addEventListener('visibilitychange', this._vis = () => { if (document.hidden) this._saveMarket(); });
       this._timer = setInterval(() => this._tick(), 1500);
     }
     _seed(sym) {
@@ -36,23 +48,28 @@
       this.series[sym] = out; this.regime[sym] = { drift, left: 30 + Math.random() * 40 | 0, ticks: 0 };
     }
     _tick() {
+      let newCandle = false;
       Object.keys(SPECS).forEach(sym => {
         const sp = SPECS[sym], s = this.series[sym], rg = this.regime[sym], last = s.at(-1);
         if (--rg.left <= 0) { rg.drift = (Math.random() - .5) * .55; rg.left = 30 + Math.random() * 50 | 0; }
         const c = last.close + (rg.drift * .2 + (Math.random() - .5) * .6) * sp.vol;
         last.close = c; last.high = Math.max(last.high, c); last.low = Math.min(last.low, c); last.tickVolume += Math.random() * 40 | 0;
         if (++rg.ticks >= 12) { // close candle every ~18s (accelerated demo market)
+          newCandle = true;
           rg.ticks = 0; s.push({ time: last.time + TF_MS['15m'], open: c, high: c, low: c, close: c, tickVolume: 50 }); if (s.length > 400) s.shift();
         }
       });
-      // SL/TP checks
+      // SL/TP checks: fill at the stop / target level itself (as a broker's stop order would), not at an overshot tick
       this.positions.slice().forEach(p => {
         const px = this._mark(p);
         const isBuy = p.type === 'POSITION_TYPE_BUY';
-        if ((p.stopLoss && (isBuy ? px <= p.stopLoss : px >= p.stopLoss)) || (p.takeProfit && (isBuy ? px >= p.takeProfit : px <= p.takeProfit)))
-          this._close(p, px, p.stopLoss && (isBuy ? px <= p.stopLoss : px >= p.stopLoss) ? 'SL' : 'TP');
+        const hitSl = p.stopLoss && (isBuy ? px <= p.stopLoss : px >= p.stopLoss);
+        const hitTp = p.takeProfit && (isBuy ? px >= p.takeProfit : px <= p.takeProfit);
+        if (hitSl) this._close(p, p.stopLoss, 'SL');
+        else if (hitTp) this._close(p, p.takeProfit, 'TP');
       });
       this._save();
+      if (newCandle) this._saveMarket();
     }
     _spread(sym) { return SPECS[sym].vol * .15; }
     _mark(p) { const mid = this.series[p.symbol].at(-1).close, sp = this._spread(p.symbol) / 2; return p.type === 'POSITION_TYPE_BUY' ? mid - sp : mid + sp; }
@@ -66,6 +83,14 @@
       this.deals.unshift({ id: p.id, symbol: p.symbol, type: p.type, volume: p.volume, openPrice: p.openPrice, closePrice: px, profit, time: Date.now(), openTime: p.time, reason, comment: p.comment });
       this.deals = this.deals.slice(0, 300);
       this.onEvent && this.onEvent({ type: 'closed', deal: this.deals[0] });
+    }
+    /* Persist price history + regime so a new session continues the same market (compact rows). */
+    _saveMarket() {
+      try {
+        const series = {}, f = (v, d) => +v.toFixed(d + 1);
+        Object.entries(this.series).forEach(([sym, rows]) => { const d = SPECS[sym].digits; series[sym] = rows.slice(-300).map(c => [c.time, f(c.open, d), f(c.high, d), f(c.low, d), f(c.close, d), c.tickVolume | 0]); });
+        this.store.set('demo_market', { v: 1, savedAt: Date.now(), series, regime: this.regime });
+      } catch { /* storage full: keep running */ }
     }
     _save() { this.store.set('demo', { balance: this.balance, positions: this.positions, deals: this.deals, nextId: this.nextId }); }
     async connect() { return true; }
@@ -87,7 +112,7 @@
     }
     async closePosition(id) { const p = this.positions.find(x => x.id === id); if (p) { this._close(p, this._mark(p)); this._save(); } return { stringCode: 'TRADE_RETCODE_DONE' }; }
     reset() { this.balance = 10000; this.positions = []; this.deals = []; this._save(); }
-    destroy() { clearInterval(this._timer); }
+    destroy() { this._saveMarket(); clearInterval(this._timer); removeEventListener('pagehide', this._onHide); document.removeEventListener('visibilitychange', this._vis); }
   }
 
   /* ---------------- MetaApi (real MT5) broker ---------------- */
