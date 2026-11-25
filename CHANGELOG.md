@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.9.0] - 2026-11-25
+### Added
+- **Trading experience levels: Beginner, Moderate and Pro trader.** You pick one when creating your profile, and can change it any time in Profile → Trading experience.
+  - **Beginner:** only the tested Conservative and Balanced presets and your symbols. The bot always uses Auto strategy and volatility (ATR) stops. Switching to Beginner resets custom settings to the tested values, after asking first.
+  - **Moderate:** adds strategy choice, timeframe (15m, 1h, 4h), trend filter, flip exit, $ and basket targets, and money management. Entry threshold, confidence and ATR sliders stay hidden.
+  - **Pro trader:** every setting, including 5m charts and scan interval.
+  - Existing profiles start as Pro trader, so nothing disappears after updating.
+- **Tested-settings card** at the top of Auto-Trade settings, always visible.
+  - It shows "✓ Tested Balanced settings" (or Conservative or Aggressive) when your settings match a backtested preset.
+  - Otherwise it shows "Custom settings · not tested" and lists what differs (for example timeframe or stop-loss), with a **Reset to tested** button. Your symbols are kept.
+  - This replaces the one-time prompt from 1.8.0.
+- **Getting started guide.** Five steps: watch the bot on Paper, keep the tested settings, connect an MT5 demo account, run it for 2–4 weeks (30+ closed trades), then go live small. Steps tick off on their own, and each has a "Go there" link.
+  - Open it from the tested-settings card or from Profile.
+  - Beginner and Moderate users also see a progress card on the Dashboard, which can be turned off in Profile.
+
+### Changed
+- New profiles default to Beginner with the Conservative preset.
+- Tapping a risk preset also resets strategy to Auto and targets to ATR, matching what was tested.
+
 ## [1.8.0] - 2026-11-25
 ### Changed
 - **Bot rebuilt after a backtest on real prices.** The bot was replayed over 16 months of real MT5 data (EURUSD, gold, US500). With the old logic and the settings in use (5m, ±23, 83%, SL 4.2, TP 7.2) it lost about 466 R over 7,141 trades, no better than random entries. Nearly all of that loss was spread.

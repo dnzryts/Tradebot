@@ -421,3 +421,19 @@ html.private #eq { display: none; }
 .exitrow .bar i { display: block; height: 100%; border-radius: 3px; }
 .exitrow .bar i.upbg { background: var(--up); }
 .exitrow .bar i.downbg { background: var(--down); }
+
+/* Experience levels, tested-settings card and getting-started guide */
+.tested { margin-bottom: 12px; }
+.okdot { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
+.okdot.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.linkbtn { color: var(--accent) !important; font-weight: 700; background: none; border: 0; padding: 0; }
+.guidecard { cursor: pointer; }
+.guidecard .chev { font-size: 22px; color: var(--muted); }
+.guidecard .bar { height: 6px; border-radius: 3px; background: var(--card2); overflow: hidden; }
+.guidecard .bar i { display: block; height: 100%; border-radius: 3px; background: var(--up); }
+.gstep { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.gstep:first-of-type { border-top: 0; }
+.gstep .gnum { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--card2); color: var(--text); }
+.gstep.done .gnum { background: var(--up); color: #fff; }
+.gstep.done .title { opacity: .7; }
+.gstep .linkbtn { margin-top: 6px; }

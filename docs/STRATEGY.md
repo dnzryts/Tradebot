@@ -134,7 +134,7 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 | Balanced | 15m | 1% | ±25 | 80% | 3 | −4% | 4.0 | 7.0 |
 | Aggressive | 15m | 2% | ±20 | 75% | 5 | −8% | 3.5 | 6.0 |
 
-All presets turn on *Follow the bigger trend* and *Exit when sentiment flips*. Changing any slider or the timeframe switches the profile to *Custom*.
+All presets turn on *Follow the bigger trend* and *Exit when sentiment flips*, and use the Auto strategy with ATR targets. The tested-settings card on Auto-Trade shows whether the current settings match a preset, and resets them in one tap. Beginner level only offers Conservative and Balanced; Moderate hides the threshold, confidence and ATR sliders; Pro trader shows everything. Changing any slider or the timeframe switches the profile to *Custom*.
 
 ## 6a. Backtest (v1.8.0)
 

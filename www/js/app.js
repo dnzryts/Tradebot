@@ -19,6 +19,13 @@
     balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 25, minConfidence: 80, maxPositions: 3, dailyLossPct: 4, slAtr: 4, tpAtr: 7, timeframe: '15m', htfFilter: true, exitOnFlip: true },
     aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 20, minConfidence: 75, maxPositions: 5, dailyLossPct: 8, slAtr: 3.5, tpAtr: 6, timeframe: '15m', htfFilter: true, exitOnFlip: true },
   };
+  /* Trading experience: how much of Auto-Trade is shown. Beginners only get tested presets. */
+  const LEVELS = {
+    beginner: { label: 'Beginner', icon: '🌱', desc: 'Guided setup. Only the tested Conservative and Balanced presets; the bot chooses strategy, stops and sizing for you.' },
+    moderate: { label: 'Moderate', icon: '📊', desc: 'Choose strategy, symbols, timeframe, $ targets and money management. Fine-tuning sliders stay hidden.' },
+    pro: { label: 'Pro trader', icon: '🎯', desc: 'Every setting: entry threshold, confidence, ATR multiples, 5-minute charts and scan interval.' },
+  };
+  const TESTED_KEYS = ['timeframe', 'threshold', 'minConfidence', 'slAtr', 'tpAtr', 'htfFilter', 'exitOnFlip'];
   const HTF = { '5m': '1h', '15m': '1h', '1h': '4h', '4h': '1d' };
   const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
   const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1;
@@ -26,6 +33,29 @@
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
 
+  const level = () => S.profile?.level || 'pro';
+  const atLeast = l => ['beginner', 'moderate', 'pro'].indexOf(level()) >= ['beginner', 'moderate', 'pro'].indexOf(l);
+  /* Which tested preset the bot's strategy settings match (null = custom), and what differs. */
+  function testedState() {
+    const b = S.bot, near = (x, y) => typeof y === 'number' ? Math.abs(x - y) < 1e-9 : x === y;
+    const match = Object.keys(RISK_PRESETS).find(k => TESTED_KEYS.every(f => near(b[f], RISK_PRESETS[k][f])));
+    const diffs = [];
+    if (!match) { const ref = RISK_PRESETS[RISK_PRESETS[b.profile] ? b.profile : 'balanced']; TESTED_KEYS.forEach(f => { if (!near(b[f], ref[f])) diffs.push(f); }); }
+    if (b.strategy !== 'auto') diffs.push('strategy');
+    if (b.targetMode !== 'atr') diffs.push('targetMode');
+    return { match: diffs.length ? null : match, nearest: match || (RISK_PRESETS[b.profile] ? b.profile : 'balanced'), diffs };
+  }
+  const DIFF_LABEL = { timeframe: 'timeframe', threshold: 'entry threshold', minConfidence: 'confidence', slAtr: 'stop-loss', tpAtr: 'take-profit', htfFilter: 'trend filter', exitOnFlip: 'flip exit', strategy: 'strategy (tested on Auto)', targetMode: 'fixed $ targets (tested on ATR)' };
+  function applyTested(k) {
+    if (level() === 'beginner' && k === 'aggressive') k = 'balanced';
+    Object.assign(S.bot, RISK_PRESETS[k], { profile: k, strategy: 'auto', targetMode: 'atr', botV: 2 });
+  }
+  function setLevel(lv) {
+    S.profile.level = lv; const b = S.bot;
+    if (lv === 'beginner') { applyTested(['conservative', 'balanced'].includes(b.profile) ? b.profile : 'conservative'); Object.assign(b, { basketTp: 0, basketSl: 0, intervalSec: 10 }); }
+    if (lv === 'moderate' && b.timeframe === '5m') b.timeframe = '15m';
+    save(); S.candleCache = {};
+  }
   const S = {
     profile: store.get('profile'),               // {name, email, pinHash, biometric, riskProfile, color, created}
     theme: (t => ['system', 'light'].includes(t) ? t : t ? 'midnight' : 'system')(store.get('themeV2') ? store.get('theme') : 'system'), // dark styles folded into Midnight
@@ -59,7 +89,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const cls = v => S.privacy ? '' : v > 0 ? 'up' : v < 0 ? 'down' : '';   // no win/loss colours while amounts are hidden
   const sentCls = s => s >= 25 ? 'up' : s <= -25 ? 'down' : 'neutral';
-  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); store.set('prefs', S.prefs); };
+  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); store.set('prefs', S.prefs); refreshTested(); };
   let toastT; function toast(msg) { const t = $('#toast'); t.onclick = null; t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
   function log(msg, kind = '') { S.log.unshift({ t: Date.now(), msg, kind }); S.log = S.log.slice(0, 200); store.set('log', S.log); const el = $('#botlog'); if (el) el.innerHTML = logHtml(); }
   /* Theme: 'system' follows the phone's light/dark mode (dark uses the chosen dark theme). */
@@ -171,7 +201,7 @@
   /* ---------- Profile setup ---------- */
   async function renderSetup() {
     const bio = await Security.available();
-    let risk = 'balanced', color = AVATAR_COLORS[0];
+    let risk = 'conservative', color = AVATAR_COLORS[0], lvl = 'beginner';
     app.innerHTML = `<div class="screen">
       <div class="brand" style="margin-bottom:26px">${logo}Tradebot</div>
       <h1>Create your <span class="grad-text">profile</span></h1>
@@ -179,7 +209,9 @@
       <div class="field"><label>Display name</label><input class="input" id="name" placeholder="e.g. Alex" maxlength="24"></div>
       <div class="field"><label>Email (optional)</label><input class="input" id="email" type="email" placeholder="you@example.com"></div>
       <div class="field"><label>Avatar colour</label><div class="row">${AVATAR_COLORS.map((c, k) => `<button class="avatar cpick" data-c="${c}" style="background:${c};width:36px;height:36px;border-radius:12px;${k ? '' : 'outline:3px solid var(--text)'}"></button>`).join('')}</div></div>
-      <div class="field"><label>Risk profile</label><div class="seg" id="risk">${Object.entries(RISK_PRESETS).map(([k, v]) => `<button data-k="${k}" class="${k === risk ? 'on' : ''}">${v.label}</button>`).join('')}</div>
+      <div class="field"><label>Trading experience</label><div class="seg" id="lvl">${Object.entries(LEVELS).map(([k, l]) => `<button data-l="${k}" class="${k === lvl ? 'on' : ''}">${l.label}</button>`).join('')}</div>
+        <div class="hint" id="lvlhint">${LEVELS[lvl].desc}</div></div>
+      <div class="field"><label>Risk profile</label><div class="seg" id="risk">${Object.entries(RISK_PRESETS).map(([k, v]) => `<button data-k="${k}" class="${k === risk ? 'on' : ''} ${k === 'aggressive' && lvl === 'beginner' ? 'hidden' : ''}">${v.label}</button>`).join('')}</div>
         <div class="hint" id="riskhint"></div></div>
       <div class="field"><label>6-digit PIN</label><input class="input mono" id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
       <div class="field"><label>Confirm PIN</label><input class="input mono" id="pin2" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
@@ -189,6 +221,11 @@
     </div>`;
     const hint = () => { const p = RISK_PRESETS[risk]; $('#riskhint').textContent = `${p.timeframe} candles · ${p.riskPct}% risk per trade · max ${p.maxPositions} positions · stop at -${p.dailyLossPct}% per day`; };
     hint();
+    $$('#lvl button').forEach(b => b.onclick = () => {
+      lvl = b.dataset.l; $$('#lvl button').forEach(x => x.classList.toggle('on', x === b)); $('#lvlhint').textContent = LEVELS[lvl].desc;
+      $('#risk [data-k=aggressive]').classList.toggle('hidden', lvl === 'beginner');
+      if (lvl === 'beginner' && risk === 'aggressive') $('#risk [data-k=balanced]').click();
+    });
     $$('#risk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#risk button').forEach(x => x.classList.toggle('on', x === b)); hint(); });
     $$('.cpick').forEach(b => b.onclick = () => { color = b.dataset.c; $$('.cpick').forEach(x => x.style.outline = x === b ? '3px solid var(--text)' : ''); });
     $('#create').onclick = async () => {
@@ -197,8 +234,8 @@
       if (!/^\d{6}$/.test(pin)) return toast('PIN must be 6 digits');
       if (pin !== pin2) return toast('PINs do not match');
       if ($('#bio').checked && bio.ok && !(await Security.verify('Confirm fingerprint to enable unlock'))) return toast('Fingerprint not confirmed');
-      S.profile = { name, email: $('#email').value.trim(), pinHash: await Security.hashPin(pin), biometric: $('#bio').checked, riskProfile: risk, color, created: Date.now() };
-      Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk, botV: 2 });
+      S.profile = { name, email: $('#email').value.trim(), pinHash: await Security.hashPin(pin), biometric: $('#bio').checked, riskProfile: risk, level: lvl, color, created: Date.now() };
+      applyTested(risk);
       save(); S.unlocked = true; toast(`Welcome, ${name}!`); render(); boot();
     };
   }
@@ -470,6 +507,7 @@
           <div class="stat"><div class="lbl">Floating</div><div class="val mono">${signed(pl)}</div></div>
           <div class="stat"><div class="lbl">Free margin</div><div class="val mono">${money(a.freeMargin ?? 0)}</div></div></div>
       </div>
+      ${level() !== 'pro' && !S.prefs.guideHidden && guideSteps().some((x, i) => i < 4 && !x.done) ? `<div class="card guidecard" data-guide data-key="guide">${guideCardHtml()}</div>` : ''}
       ${liveTradesHtml()}
       <div class="card"><div class="row between"><h2 style="font-size:17px">Market sentiment</h2><span class="chip ${sentCls(mood.score)}">${mood.label}</span></div>
         <div class="gauge-wrap">${gauge(mood.score)}<div class="grow">
@@ -646,23 +684,25 @@
       <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
       ${isLive() ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
       <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
-      ${b.botV !== 2 ? `<div class="notice" id="tuned" style="margin-bottom:12px"><b>Bot improved in v1.8.</b> Replayed over 16 months of real MT5 prices, your current settings lost money (mostly spread on short trades). Apply the tested <b>${RISK_PRESETS[b.profile]?.label || 'Balanced'}</b> profile?
-        <div class="row" style="margin-top:10px;gap:8px"><button class="btn small" id="tuneyes">Apply tested settings</button><button class="btn small ghost" id="tuneno">Keep mine</button></div></div>` : ''}
+      <div class="card tested" id="tested" data-view="tested">${testedHtml()}</div>
       <div class="lockbar ${S.settingsUnlocked ? 'open' : ''}" id="lockbar"><div><b id="lockt">${S.settingsUnlocked ? '🔓 Editing settings' : '🔒 Settings locked'}</b><div class="sub" id="locks">${S.settingsUnlocked ? 'Lock again when you are done' : 'Prevents accidental changes while scrolling'}</div></div><button class="btn small ${S.settingsUnlocked ? '' : 'ghost'}" id="lockbtn">${S.settingsUnlocked ? 'Lock' : 'Unlock to edit'}</button></div>
       <div id="botsettings" class="${S.settingsUnlocked ? '' : 'locked'}">
-      <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
-      <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
+      <div class="${atLeast('moderate') ? '' : 'hidden'}"><h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div></div>
+      <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''} ${k === 'aggressive' && !atLeast('moderate') ? 'hidden' : ''}">${p.label}</button>`).join('')}</div>
+      <p class="hint">${presetHint()}</p>
       <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${[...new Set([...b.symbols, ...all])].slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
-      <h3>Strategy settings</h3><div class="card">
-        <div class="field"><label>Timeframe</label><div class="seg" id="tf">${['5m', '15m', '1h', '4h'].map(t => `<button data-t="${t}" class="${b.timeframe === t ? 'on' : ''}">${t}</button>`).join('')}</div>
+      <div class="${atLeast('moderate') ? '' : 'hidden'}"><h3>Strategy settings</h3><div class="card">
+        <div class="field"><label>Timeframe</label><div class="seg" id="tf">${['5m', '15m', '1h', '4h'].map(t => `<button data-t="${t}" class="${b.timeframe === t ? 'on' : ''} ${t === '5m' && !atLeast('pro') ? 'hidden' : ''}">${t}</button>`).join('')}</div>
           <p class="hint" id="tfhint">${tfHint()}</p></div>
+        <div class="${atLeast('pro') ? '' : 'hidden'}">
         ${slider('threshold', 'Entry sentiment threshold', 15, 80, 1, '±')}
         ${slider('minConfidence', 'Minimum confidence', 20, 90, 1, '', '%')}
         ${slider('slAtr', 'Stop-loss (× ATR)', .5, 5, .1)}
-        ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}
+        ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}</div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Follow the bigger trend</div><div class="sub" id="htfsub">Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down</div></div><label class="toggle"><input type="checkbox" id="htf" ${b.htfFilter ? 'checked' : ''}><span></span></label></div>
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
-      </div>
+      </div></div>
+      <div class="${atLeast('moderate') ? '' : 'hidden'}">
       <h3>Profit & loss targets</h3><div class="card" id="targets">
         <div class="seg" id="tmode" style="margin-bottom:12px"><button data-m="atr" class="${b.targetMode === 'atr' ? 'on' : ''}">By volatility (ATR)</button><button data-m="usd" class="${b.targetMode === 'usd' ? 'on' : ''}">Fixed $ amount</button></div>
         <div id="t_usd" class="${b.targetMode === 'usd' ? '' : 'hidden'}">
@@ -680,9 +720,10 @@
         ${slider('maxPositions', 'Max open positions', 1, 10, 1)}
         ${slider('dailyLossPct', 'Daily loss limit (bot pauses)', .5, 20, .5, '-', '%')}
         ${slider('maxLot', 'Max lot per trade', .01, 10, .01)}
-        ${slider('intervalSec', 'Scan interval', 5, 300, 5, '', ' s')}
-        <p class="hint" style="margin-top:-4px">How often the bot checks for a newly closed candle. It trades at most once per candle, so a shorter interval does not mean more trades.</p>
-      </div>
+        <div class="${atLeast('pro') ? '' : 'hidden'}">${slider('intervalSec', 'Scan interval', 5, 300, 5, '', ' s')}
+        <p class="hint" style="margin-top:-4px">How often the bot checks for a newly closed candle. It trades at most once per candle, so a shorter interval does not mean more trades.</p></div>
+      </div></div>
+      ${atLeast('moderate') ? '' : `<p class="hint" style="margin-top:14px">🌱 Beginner mode shows only the tested presets. More settings appear at <b>Moderate</b> or <b>Pro trader</b> level (Profile → Trading experience).</p>`}
       </div>
       <h3>Activity log</h3><div class="card log" id="botlog">${logHtml()}</div>
       <button class="btn ghost" id="clearlog">Clear log</button>
@@ -691,12 +732,11 @@
     $('#bottoggle').onchange = e => toggleBot(e.target.checked);
     $$('#strat button').forEach(x => x.onclick = () => { b.strategy = x.dataset.st; save(); $$('#strat button').forEach(y => y.classList.toggle('on', y === x)); paint($('#radar'), radarHtml(), 'radar'); log(`Strategy set to ${Engine.STRATEGIES[b.strategy].label}`); });
     bindPositions(v);
-    $$('#preset button').forEach(x => x.onclick = () => { Object.assign(S.bot, RISK_PRESETS[x.dataset.k], { profile: x.dataset.k, botV: 2 }); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
+    $$('#preset button').forEach(x => x.onclick = () => { applyTested(x.dataset.k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; save(); analyseAll(); });
     $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
-    const tuned = ok => { if (ok) { const k = RISK_PRESETS[b.profile] ? b.profile : 'balanced'; Object.assign(b, RISK_PRESETS[k], { profile: k }); } b.botV = 2; save(); if (ok) { viewBot(v); toast('Tested settings applied'); log(`Applied tested ${RISK_PRESETS[b.profile].label} settings`); } else $('#tuned')?.remove(); };
-    $('#tuneyes') && ($('#tuneyes').onclick = () => tuned(true)); $('#tuneno') && ($('#tuneno').onclick = () => tuned(false));
+    bindTested(v);
     $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); });
     $('#flip').onchange = e => { b.exitOnFlip = e.target.checked; save(); };
     $('#lockbtn').onclick = async () => {
@@ -714,6 +754,52 @@
     });
     $('#clearlog').onclick = () => { S.log = []; store.set('log', []); $('#botlog').innerHTML = logHtml(); };
   }
+  /* Getting-started guide: steps tick themselves off from the app's state. */
+  function guideSteps() {
+    const live = isLive(), n = S.history.length, t = testedState();
+    return [
+      { t: 'Watch the bot on Paper', d: 'Turn on the Sentiment Bot in Auto-Trade while on Paper and see how it opens and closes trades. Paper prices are simulated, so its profit or loss here proves nothing either way.', done: !!S.bot.everRan, go: 'bot' },
+      { t: 'Keep the tested settings', d: 'Use the Conservative or Balanced preset. Those are the settings that held up when the bot was replayed over 16 months of real prices. Custom settings are untested.', done: !!t.match, go: 'bot' },
+      { t: 'Connect an MT5 demo account', d: 'Open a free demo account with your broker (in XM: “Open demo account”), then connect it in Profile → Trading account. A demo uses real prices with pretend money.', done: live, go: 'profile' },
+      { t: 'Let it run for 2–4 weeks', d: `Judge the bot on at least 30 closed trades, not one or two. Portfolio → “Where P/L comes from” shows what is making or losing money.${live ? ` So far: ${n} closed.` : ''}`, done: live && n >= 30, go: 'portfolio' },
+      { t: 'Go live small, or not at all', d: 'Only if the demo results are acceptable: use a real account with 0.5% risk per trade and the daily loss limit on. Only trade money you can afford to lose.', done: false },
+    ];
+  }
+  function guideCardHtml() {
+    const st = guideSteps(), done = st.filter(x => x.done).length, next = st.find(x => !x.done);
+    return `<div class="row between"><div><div class="sub">🌱 Getting started · ${done} of ${st.length}</div><div class="title">${next ? 'Next: ' + next.t : 'All steps done'}</div></div><span class="chev">›</span></div>
+      <div class="bar" style="margin-top:10px"><i class="upbg" style="width:${Math.max(4, done / st.length * 100)}%"></i></div>`;
+  }
+  function openGuide() {
+    const st = guideSteps();
+    sheet(`<h2>Getting started</h2><p class="sub" style="margin:-4px 0 12px">A safe path from first look to real money. Steps tick off by themselves.</p>
+      ${st.map((x, i) => `<div class="gstep ${x.done ? 'done' : ''}"><span class="gnum">${x.done ? '✓' : i + 1}</span><div class="grow"><div class="title">${x.t}</div><div class="sub">${x.d}</div>
+        ${x.go && !x.done ? `<button class="sub linkbtn" data-gogo="${x.go}">Go there ›</button>` : ''}</div></div>`).join('')}
+      <div class="notice" style="margin-top:12px">No bot or setting guarantees profit. The tested presets only roughly broke even to slightly positive in testing, mostly from gold.</div>
+      <button class="btn ghost" data-sheetclose style="margin-top:12px">Close</button>`,
+      bg => { $$('[data-gogo]', bg).forEach(x => x.onclick = () => { closeSheet(bg); S.slideTo ? S.slideTo(x.dataset.gogo) : goTab(x.dataset.gogo); }); $('[data-sheetclose]', bg).onclick = () => closeSheet(bg); }, 'guide');
+  }
+  document.addEventListener('click', e => { if (e.target.closest('[data-guide]')) openGuide(); });
+  function testedHtml() {
+    const t = testedState(), lvl = LEVELS[level()];
+    const head = `<div class="row between"><span class="sub">${lvl.icon} ${lvl.label} mode</span><button class="sub linkbtn" data-guide>Getting started guide ›</button></div>`;
+    if (t.match) { const p = RISK_PRESETS[t.match];
+      return `${head}<div class="row" style="gap:10px;margin-top:8px"><span class="okdot">✓</span><div><div class="title">Tested ${p.label} settings</div>
+        <div class="sub">${p.timeframe} · ±${p.threshold} · ${p.minConfidence}% · SL ${p.slAtr} / TP ${p.tpAtr} ATR · trend filter on</div></div></div>`; }
+    return `${head}<div class="row" style="gap:10px;margin-top:8px"><span class="okdot warn">!</span><div class="grow"><div class="title">Custom settings · not tested</div>
+      <div class="sub">Differs from tested ${RISK_PRESETS[t.nearest].label}: ${t.diffs.map(d => DIFF_LABEL[d]).join(', ')}</div></div></div>
+      <button class="btn small" id="resettested" style="margin-top:10px;width:100%">Reset to tested ${RISK_PRESETS[t.nearest].label}</button>`;
+  }
+  function bindTested(v) {
+    const r = $('#resettested'); if (r) r.onclick = async () => {
+      const k = testedState().nearest;
+      if (!(await ask({ title: `Reset to tested ${RISK_PRESETS[k].label}?`, message: 'Timeframe, entry rules, stops, trend filter and flip exit go back to the backtested values. Strategy becomes Auto and targets follow volatility (ATR). Your symbols stay as they are.', ok: 'Reset', ic: 'bot' }))) return;
+      applyTested(k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`Tested ${RISK_PRESETS[k].label} settings applied`); log(`Reset to tested ${RISK_PRESETS[k].label} settings`);
+    };
+  }
+  function refreshTested() { const t = S.tab === 'bot' && document.getElementById('tested'); if (t) { paint(t, testedHtml(), 'tested'); bindTested($('#view')); } }
+  const presetHint = () => level() === 'beginner' ? 'Conservative trades on 1-hour charts with half the risk. Balanced trades on 15-minute charts. Both were tested on 16 months of real prices.'
+    : 'All three presets were tested on 16 months of real prices. Tapping one resets strategy to Auto and targets to ATR.';
   const slider = (k, l, min, max, step, pre = '', suf = '') => `<div class="field"><div class="row between"><label style="margin:0 0 4px 4px">${l}</label><b class="mono" id="v_${k}">${pre}${S.bot[k]}${suf}</b></div>
     <input type="range" data-k="${k}" data-pre="${pre}" data-suf="${suf}" min="${min}" max="${max}" step="${step}" value="${S.bot[k]}"></div>`;
   const tfHint = () => ({
@@ -744,7 +830,7 @@
       const ok = await ask({ title: 'Enable live auto-trading?', message: 'The bot will open and close <b>real positions</b> on your MT5 account using your strategy and risk settings. You are responsible for any losses.', ok: 'Enable bot', tone: 'danger', ic: 'bot' });
       if (!ok || (S.profile.biometric && !(await Security.verify('Confirm to enable live auto-trading')))) { $('#bottoggle').checked = false; return; }
     }
-    S.bot.enabled = on; S.bot.pausedReason = ''; save(); log(on ? `Bot started (${RISK_PRESETS[S.bot.profile]?.label || 'Custom'} profile)` : 'Bot stopped', on ? 'up' : '');
+    S.bot.enabled = on; S.bot.pausedReason = ''; if (on) S.bot.everRan = true; save(); log(on ? `Bot started (${RISK_PRESETS[S.bot.profile]?.label || 'Custom'} profile)` : 'Bot stopped', on ? 'up' : '');
     const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
     scheduleBot(true);
   }
@@ -869,7 +955,13 @@
     v.innerHTML = `<div class="screen">${topbar('Profile')}
       <div class="card row"><div class="avatar" style="background:${p.color};color:#fff;width:58px;height:58px;border-radius:20px;font-size:22px">${esc(p.name[0]).toUpperCase()}</div>
         <div class="grow"><div class="title" style="font-size:18px">${esc(p.name)}</div><div class="sub"><span id="pidsub">${esc(profileSub())}</span></div>
-        <span class="chip" style="margin-top:6px">${RISK_PRESETS[p.riskProfile]?.label || 'Custom'} investor</span></div></div>
+        <span class="chip" style="margin-top:6px">${LEVELS[level()].icon} ${LEVELS[level()].label} · ${RISK_PRESETS[p.riskProfile]?.label || 'Custom'} investor</span></div></div>
+      <h3>Trading experience</h3><div class="card">
+        <div class="seg" id="plevel">${Object.entries(LEVELS).map(([k, l]) => `<button data-l="${k}" class="${level() === k ? 'on' : ''}">${l.label}</button>`).join('')}</div>
+        <p class="hint" id="plevelhint">${LEVELS[level()].desc}</p>
+        <div class="row between list-item" style="margin-top:6px"><div><div class="title">Getting started guide</div><div class="sub">Paper → tested settings → demo account → live</div></div><button class="btn small ghost" data-guide>Open</button></div>
+        <div class="row between list-item"><div><div class="title">Show guide on Dashboard</div><div class="sub">Beginner and Moderate levels, until the first steps are done</div></div><label class="toggle"><input type="checkbox" id="pguide" ${S.prefs.guideHidden ? '' : 'checked'}><span></span></label></div>
+      </div>
       <h3>Trading account</h3><div class="card"><div class="row between"><div class="row"><div class="avatar">${S.conn.mode === 'bridge' ? 'VPS' : isLive() ? 'MT5' : 'SIM'}</div>
         <div><div class="title"><span id="pacct">${esc(acctTitle())}</span></div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
         <button class="btn small" id="conn">${isLive() ? 'Manage' : 'Connect MT5'}</button></div></div>
@@ -920,9 +1012,15 @@
       $$('#hpresets button').forEach(b => b.onclick = () => setHero(+b.dataset.v));
       setHero(S.heroAlpha * 100);
     }
+    $$('#plevel button').forEach(x => x.onclick = async () => {
+      const lv = x.dataset.l; if (lv === level()) return;
+      if (lv === 'beginner' && !testedState().match && !(await ask({ title: 'Switch to Beginner?', message: 'Beginner mode uses only the tested presets, so your custom bot settings will be reset to the tested Conservative or Balanced values. Your symbols stay.', ok: 'Switch', ic: 'bot' }))) return;
+      setLevel(lv); toast(`${LEVELS[lv].label} mode`); log(`Trading experience set to ${LEVELS[lv].label}`); viewProfile(v);
+    });
+    $('#pguide').onchange = e => { S.prefs.guideHidden = !e.target.checked; save(); };
     let risk = p.riskProfile;
     $$('#prisk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#prisk button').forEach(x => x.classList.toggle('on', x === b)); });
-    $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk, botV: 2 }); save(); toast('Profile saved'); viewProfile(v); };
+    $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); applyTested(risk); save(); toast('Profile saved'); viewProfile(v); };
     $('#pbio').onchange = async e => { if (e.target.checked && !(await Security.verify('Enable fingerprint unlock'))) { e.target.checked = false; return; } p.biometric = e.target.checked; save(); toast(p.biometric ? 'Fingerprint enabled' : 'Fingerprint disabled'); };
     $('#ppin').onclick = changePin;
     $('#whatsnew').onclick = () => openChangelog();
