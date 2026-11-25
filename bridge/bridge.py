@@ -30,7 +30,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 BOT_MAGIC = 20261124          # magic number stamped on Tradebot's own orders
 HERE = Path(__file__).resolve().parent
 CONFIG = json.loads((HERE / "config.json").read_text(encoding="utf-8")) if (HERE / "config.json").exists() else {}
@@ -96,7 +96,7 @@ def select_symbol(symbol: str):
 
 def tag_comment(comment: str, magic: int) -> str:
     # Some servers truncate/strip comments; keep bot trades recognisable via the magic number.
-    if magic == BOT_MAGIC and not (comment or "").startswith("TB "):
+    if magic == BOT_MAGIC and not (comment or "").startswith("TB"):
         return "TB S"
     return comment or ""
 
@@ -264,9 +264,13 @@ def trade(t: TradeIn):
     return result
 
 
+class CloseIn(BaseModel):
+    comment: str = ""
+
+
 @app.post("/positions/{ticket}/close", dependencies=[Depends(auth)])
 @mt5_call
-def close(ticket: int):
+def close(ticket: int, body: Optional[CloseIn] = None):
     found = mt5.positions_get(ticket=ticket)
     if not found:
         raise HTTPException(404, f"Position {ticket} not found (already closed?)")
@@ -276,7 +280,8 @@ def close(ticket: int):
     is_buy = p.type == mt5.POSITION_TYPE_BUY
     req = {"action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol, "volume": p.volume, "position": p.ticket,
            "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY, "price": tick.bid if is_buy else tick.ask,
-           "deviation": 20, "magic": p.magic, "comment": "Tradebot close", "type_time": mt5.ORDER_TIME_GTC}
+           "deviation": 20, "magic": p.magic, "comment": ((body.comment if body else "") or "Tradebot close")[:31],
+           "type_time": mt5.ORDER_TIME_GTC}
     result = send(req, sym)
     log.info("CLOSE #%s %s %s -> %s", ticket, p.symbol, p.volume, result["stringCode"])
     return result

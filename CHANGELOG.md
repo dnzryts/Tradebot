@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.4] - 2026-11-25
+### Fixed
+- **Closed trades were all labelled "Manual" in paper mode**, including the bot's own exits (sentiment flip, back to mean), Close all and basket closes. Every close now records its real reason, and Closed trades shows it: 🤖 bot exit, ✋ closed by you, ⛔ Close all, 🎯 take-profit, 🛑 stop-loss. For MT5 accounts the reason is sent with the close order and read back from the deal comment (bridge 1.1.0; MetaApi close comment).
+- A tap on **Close** while swiping the live trade card is ignored.
+
+### Added
+- **Confirm before closing a trade** (Profile → Trading safety): *All trades* (default), *Losing only* or *Off*. The dialog shows the trade, whether it is a bot or manual trade, and the current P/L, with a clear "Close at a loss" warning.
+- **Auto-Trade settings lock.** Strategy, risk profile, symbols, sliders and targets are locked by default so scrolling can't change them. Tap *Unlock to edit* (fingerprint on live accounts); settings lock again when you leave the tab or after 2 minutes.
+
+### Bridge 1.1.0
+- `/positions/{id}/close` accepts an optional `{comment}` with the close reason; bot comments are kept in history.
+
 ## [1.5.3] - 2026-11-25
 ### Changed
 - Dashboard **Live trades is now a single card**: floating P/L summary on top, then one trade at a time at full card width.

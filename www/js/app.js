@@ -25,7 +25,8 @@
     profile: store.get('profile'),               // {name, email, pinHash, biometric, riskProfile, color, created}
     theme: (t => ['system', 'light'].includes(t) ? t : t ? 'midnight' : 'system')(store.get('themeV2') ? store.get('theme') : 'system'), // dark styles folded into Midnight
     systemDark: 'midnight',
-    heroAlpha: store.get('heroAlpha') ?? 0.65,      // dashboard card opacity (0.15–1)
+    heroAlpha: store.get('heroAlpha') ?? 0.65,
+    prefs: { confirmClose: 'always', ...(store.get('prefs') || {}) },   // confirmClose: always | loss | off      // dashboard card opacity (0.15–1)
     onboarded: store.get('onboarded') || false,
     conn: store.get('conn') || { mode: 'demo' },  // {mode:'demo'|'mt5', accountId, region, login, server}
     bot: { ...DEFAULT_BOT, ...(store.get('bot') || {}) },
@@ -46,7 +47,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const cls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
   const sentCls = s => s >= 25 ? 'up' : s <= -25 ? 'down' : 'neutral';
-  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); };
+  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); store.set('prefs', S.prefs); };
   let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
   function log(msg, kind = '') { S.log.unshift({ t: Date.now(), msg, kind }); S.log = S.log.slice(0, 200); store.set('log', S.log); const el = $('#botlog'); if (el) el.innerHTML = logHtml(); }
   /* Theme: 'system' follows the phone's light/dark mode (dark uses the chosen dark theme). */
@@ -230,6 +231,7 @@
     if (!$('#view') || tab === S.tab) return;
     if (!dir) dir = Math.sign(TAB_ORDER.indexOf(tab) - TAB_ORDER.indexOf(S.tab));
     if (!fromBack) { navStack.push(S.tab); if (navStack.length > 30) navStack.shift(); }
+    if (S.tab === 'bot') S.settingsUnlocked = false;   // settings re-lock when you leave Auto-Trade
     S.tab = tab;
     $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
     $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0);
@@ -376,7 +378,7 @@
       const c = $('.tdots span', root); if (c) c.textContent = `${k + 1} / ${n}`;
       $$('.tarrow', root).forEach(b => b.disabled = (+b.dataset.dir < 0 ? k === 0 : k === n - 1));
     };
-    if (!sl._bound) { sl._bound = true; sl.addEventListener('scroll', () => { clearTimeout(sl._t); sl._t = setTimeout(sync, 60); }, { passive: true }); requestAnimationFrame(() => { sl.scrollLeft = (S.tradeIdx || 0) * sl.clientWidth; }); }
+    if (!sl._bound) { sl._bound = true; sl.addEventListener('scroll', () => { S._slideAt = Date.now(); clearTimeout(sl._t); sl._t = setTimeout(sync, 60); }, { passive: true }); requestAnimationFrame(() => { sl.scrollLeft = (S.tradeIdx || 0) * sl.clientWidth; }); }
     $$('.tarrow', root).forEach(b => b.onclick = () => go(S.tradeIdx + +b.dataset.dir));
     $$('.tdots i', root).forEach(d => d.onclick = () => go(+d.dataset.i));
   }
@@ -465,11 +467,13 @@
     v.innerHTML = `<div class="screen">${topbar('Auto-Trade')}
       <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
       ${isLive() ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
-      <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
       <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
+      <div class="lockbar ${S.settingsUnlocked ? 'open' : ''}" id="lockbar"><div><b id="lockt">${S.settingsUnlocked ? '🔓 Editing settings' : '🔒 Settings locked'}</b><div class="sub" id="locks">${S.settingsUnlocked ? 'Lock again when you are done' : 'Prevents accidental changes while scrolling'}</div></div><button class="btn small ${S.settingsUnlocked ? '' : 'ghost'}" id="lockbtn">${S.settingsUnlocked ? 'Lock' : 'Unlock to edit'}</button></div>
+      <div id="botsettings" class="${S.settingsUnlocked ? '' : 'locked'}">
+      <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
       <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
       <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${all.slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
-      <h3>Strategy</h3><div class="card">
+      <h3>Strategy settings</h3><div class="card">
         <div class="field"><label>Timeframe</label><div class="seg" id="tf">${['5m', '15m', '1h', '4h'].map(t => `<button data-t="${t}" class="${b.timeframe === t ? 'on' : ''}">${t}</button>`).join('')}</div></div>
         ${slider('threshold', 'Entry sentiment threshold', 15, 80, 1, '±')}
         ${slider('minConfidence', 'Minimum confidence', 20, 90, 1, '', '%')}
@@ -496,6 +500,7 @@
         ${slider('maxLot', 'Max lot per trade', .01, 10, .01)}
         ${slider('intervalSec', 'Scan interval', 5, 300, 5, '', ' s')}
       </div>
+      </div>
       <h3>Activity log</h3><div class="card log" id="botlog">${logHtml()}</div>
       <button class="btn ghost" id="clearlog">Clear log</button>
     </div>`;
@@ -508,6 +513,14 @@
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); save(); });
     $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); });
     $('#flip').onchange = e => { b.exitOnFlip = e.target.checked; save(); };
+    $('#lockbtn').onclick = async () => {
+      const open = !S.settingsUnlocked;
+      if (open && isLive() && S.profile.biometric && !(await Security.verify('Unlock bot settings'))) return;
+      S.settingsUnlocked = open; $('#botsettings').classList.toggle('locked', !open); $('#lockbar').classList.toggle('open', open);
+      $('#lockt').textContent = open ? '🔓 Editing settings' : '🔒 Settings locked'; $('#locks').textContent = open ? 'Lock again when you are done' : 'Prevents accidental changes while scrolling';
+      $('#lockbtn').textContent = open ? 'Lock' : 'Unlock to edit'; $('#lockbtn').classList.toggle('ghost', !open);
+      clearTimeout(S._relockT); if (open) S._relockT = setTimeout(() => { if (S.settingsUnlocked && S.tab === 'bot') $('#lockbtn')?.click(); else S.settingsUnlocked = false; }, 120000);
+    };
     $$('#tmode button').forEach(x => x.onclick = () => { b.targetMode = x.dataset.m; save(); $$('#tmode button').forEach(y => y.classList.toggle('on', y === x)); $('#t_usd').classList.toggle('hidden', b.targetMode !== 'usd'); $('#t_atr').classList.toggle('hidden', b.targetMode !== 'atr'); paint($('#radar'), radarHtml(), 'radar'); log(b.targetMode === 'usd' ? `Fixed targets on: +$${fmt(b.tpUsd)} / −$${fmt(b.slUsd)} per trade` : 'Targets follow volatility (ATR)'); });
     $$('input[data-usd]').forEach(inp => inp.onchange = () => {
       const k = inp.dataset.usd, min = k.startsWith('basket') ? 0 : .5; let val = Math.max(min, Math.round((+inp.value || 0) * 100) / 100);
@@ -560,12 +573,24 @@
       <h3>Allocation</h3><div class="card">${Object.keys(exp).length ? `<div class="row">${donut(exp)}<div class="donut-legend grow">${Object.entries(exp).map(([s, vol], k) => `<div><i style="background:${pal(k)}"></i>${s}<span class="grow"></span><b class="mono">${fmt(vol)} lot</b></div>`).join('')}</div></div>` : '<div class="empty">No open exposure</div>'}</div>
       ${posHeader('Open positions · ' + S.positions.length)}<div class="card">${positionsHtml(S.positions)}</div>
       <h3>Closed trades</h3><div class="card">${h.slice(0, 30).map(d => `<div class="list-item" data-key="d${d.id}-${d.time}"><div class="avatar ${d.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
-        <div class="grow"><div class="title">${d.symbol} <span class="sub">${fmt(d.volume)} lot</span></div><div class="sub">${new Date(d.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${d.reason ? ' · ' + d.reason : ''}</div></div>
+        <div class="grow"><div class="title">${d.symbol} <span class="sub">${fmt(d.volume)} lot</span></div><div class="sub">${new Date(d.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${closeWhy(d)}</div></div>
         <div class="mono title ${cls(d.profit)}">${signed(d.profit)}</div></div>`).join('') || '<div class="empty">No closed trades yet</div>'}</div>
     </div>`, 'portfolio');
     bindTop(); bindPositions(v);
     const pts = []; let run = (a.balance ?? 0) - realized; pts.push(run); h.slice().reverse().forEach(d => pts.push(run += d.profit)); pts.push(a.equity ?? run);
     drawLine($('#eq'), pts);
+  }
+  /* Who/what closed a trade: paper keeps an explicit reason; MT5 deals carry it in the close comment. */
+  function closeWhy(d) {
+    let r = d.reason || '';
+    const c = d.comment || '';
+    if (!r) r = /\[sl/i.test(c) ? 'SL' : /\[tp/i.test(c) ? 'TP' : /\[so/i.test(c) ? 'Stop out' : /^TBX /.test(c) ? c.slice(4) : c ? 'Closed in MT5' : '';
+    if (r === 'SL') return '🛑 Stop-loss hit';
+    if (r === 'TP') return '🎯 Take-profit hit';
+    if (/^Bot|^Basket/.test(r)) return '🤖 ' + r;
+    if (r === 'Close all') return '⛔ Close all';
+    if (r === 'Manual') return '✋ Closed by you';
+    return r || '—';
   }
   const pal = k => ['var(--accent)', 'var(--up)', 'var(--warn)', 'var(--accent2)', 'var(--down)', '#5ac8fa', '#ff9f0a'][k % 7];
   function donut(exp) {
@@ -582,9 +607,16 @@
   function bindPositions(root) {
     $$('[data-closeall]', root).forEach(b => b.onclick = openCloseAll);
     $$('[data-close]', root).forEach(b => b.onclick = async () => {
-      const p = S.positions.find(x => x.id === b.dataset.close);
-      if (isLive() && !(await ask({ title: 'Close live position?', message: p ? `${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'} ${fmt(p.volume)} lot ${p.symbol} · P/L <b class="${cls(p.profit)}">${signed(p.profit)}</b>` : '', ok: 'Close position', tone: 'danger', ic: 'x' }))) return;
-      try { await S.broker.closePosition(b.dataset.close); toast('Position closed'); log(`Closed position #${b.dataset.close} manually`); poll(); } catch (e) { toast('Close failed: ' + e.message); }
+      if (Date.now() - (S._slideAt || 0) < 450) return;          // finger was swiping the trade card, not tapping Close
+      const p = S.positions.find(x => x.id === b.dataset.close); if (!p) return;
+      const mode = S.prefs.confirmClose, losing = p.profit < 0;
+      if (mode === 'always' || (mode === 'loss' && losing)) {
+        const side = p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL';
+        if (!(await ask({ title: losing ? 'Close at a loss?' : 'Close this trade?',
+          message: `${side} ${fmt(p.volume)} lot <b>${p.symbol}</b> · ${isBot(p) ? '🤖 bot trade' : '✋ manual trade'}<br>Current P/L <b class="${cls(p.profit)}">${signed(p.profit)}</b>${losing ? '<br>Closing now makes this loss final.' : ''}${isLive() ? '<br>This is a <b>live</b> position on your MT5 account.' : ''}`,
+          ok: losing ? 'Close at a loss' : 'Close trade', tone: 'danger', ic: 'x' }))) return;
+      }
+      try { await S.broker.closePosition(b.dataset.close, 'Manual'); toast('Position closed'); log(`You closed ${p.symbol} #${b.dataset.close}: ${signed(p.profit)}`, cls(p.profit)); poll(); } catch (e) { toast('Close failed: ' + e.message); }
     });
   }
 
@@ -616,14 +648,14 @@
       };
     }, 'closesheet');
   }
-  async function closeAll(filter = 'all', stopBot = false) {
+  async function closeAll(filter = 'all', stopBot = false, reason = 'Close all') {
     if (stopBot && S.bot.enabled) { S.bot.enabled = false; S.bot.pausedReason = 'Stopped by Close all'; save(); scheduleBot(); log('Bot stopped (Close all)'); }
     await poll();
     const [label, f] = CLOSE_FILTERS[filter], list = S.positions.filter(f);
     toast(`Closing ${list.length} position${list.length === 1 ? '' : 's'}…`);
     let ok = 0, pl = 0; const fails = [];
     for (const p of list) { // sequential: friendlier to broker/API rate limits
-      try { await S.broker.closePosition(p.id); ok++; pl += p.profit; } catch (e) { fails.push(`${p.symbol}: ${e.message}`); }
+      try { await S.broker.closePosition(p.id, reason); ok++; pl += p.profit; } catch (e) { fails.push(`${p.symbol}: ${e.message}`); }
     }
     log(`Close all (${label.toLowerCase()}): ${ok}/${list.length} closed, ${signed(pl)}`, cls(pl));
     if (fails.length) log('Not closed: ' + fails.join('; '), 'down');
@@ -653,6 +685,10 @@
         <div class="field"><label>Email</label><input class="input" id="pemail" value="${esc(p.email)}"></div>
         <div class="field"><label>Investor risk profile</label><div class="seg" id="prisk">${Object.entries(RISK_PRESETS).map(([k, r]) => `<button data-k="${k}" class="${p.riskProfile === k ? 'on' : ''}">${r.label}</button>`).join('')}</div></div>
         <button class="btn" id="psave">Save profile</button></div>
+      <h3>Trading safety</h3><div class="card">
+        <div class="title">Confirm before closing a trade</div><div class="sub" style="margin-bottom:10px">Ask before a single trade is closed from its Close button.</div>
+        <div class="seg" id="cconf">${[['always', 'All trades'], ['loss', 'Losing only'], ['off', 'Off']].map(([k, l]) => `<button data-c="${k}" class="${S.prefs.confirmClose === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <p class="hint">Close all always asks first.</p></div>
       <h3>Security</h3><div class="card">
         <div class="row between list-item"><div><div class="title">Fingerprint unlock</div><div class="sub">Require biometrics to open the app</div></div><label class="toggle"><input type="checkbox" id="pbio" ${p.biometric ? 'checked' : ''}><span></span></label></div>
         <div class="row between list-item"><div><div class="title">Change PIN</div><div class="sub">6-digit fallback PIN</div></div><button class="btn small ghost" id="ppin">Change</button></div>
@@ -672,6 +708,7 @@
     $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };
     $('#pbio').onchange = async e => { if (e.target.checked && !(await Security.verify('Enable fingerprint unlock'))) { e.target.checked = false; return; } p.biometric = e.target.checked; save(); toast(p.biometric ? 'Fingerprint enabled' : 'Fingerprint disabled'); };
     $('#ppin').onclick = changePin;
+    $$('#cconf button').forEach(b => b.onclick = () => { S.prefs.confirmClose = b.dataset.c; save(); $$('#cconf button').forEach(x => x.classList.toggle('on', x === b)); toast(b.dataset.c === 'off' ? 'Close confirmation off' : b.dataset.c === 'loss' ? 'Confirm closing losing trades' : 'Confirm closing every trade'); });
     $('#plock').onclick = () => { S.unlocked = false; render(); };
     $('#nsave').onclick = () => { S.newsKey = $('#nkey').value.trim(); store.set('newsKey', S.newsKey); toast(S.newsKey ? 'News sentiment enabled' : 'News sentiment off'); };
     const r = $('#reset'); if (r) r.onclick = async () => { if (await ask({ title: 'Reset paper account?', message: 'Balance goes back to $10,000 and paper positions and history are cleared.', ok: 'Reset', tone: 'danger', ic: 'wallet' })) { S.broker.reset(); log('Paper account reset'); poll(); toast('Paper account reset'); } };
@@ -914,7 +951,7 @@
     S._basketBusy = true;
     log(`Basket ${hitTp ? 'take-profit' : 'stop-loss'} reached (${signed(tot)}): closing ${bp.length} bot trade${bp.length === 1 ? '' : 's'}`, hitTp ? 'up' : 'down');
     notify(`Tradebot basket ${hitTp ? 'target' : 'stop'} hit`, `Closed ${bp.length} bot trades at ${signed(tot)}`);
-    closeAll('bot').finally(() => { S._basketBusy = false; });
+    closeAll('bot', false, hitTp ? 'Basket TP' : 'Basket SL').finally(() => { S._basketBusy = false; });
   }
   const todayPnl = () => S.account && S.dayStart ? S.account.equity - S.dayStart.equity : 0;
 
@@ -992,7 +1029,7 @@
         let why = '';
         if (st === 'reversion') { if (buy ? a.bb.pctB >= .5 : a.bb.pctB <= .5) why = 'Back to mean'; }
         else if (S.bot.exitOnFlip && (buy ? a.score <= -S.bot.threshold * .6 : a.score >= S.bot.threshold * .6)) why = `Sentiment flipped (${a.score})`;
-        if (why) { try { await S.broker.closePosition(p.id); log(`${why} on ${p.symbol}: closed ${signed(p.profit)}`, cls(p.profit)); } catch (e) { log(`Close ${p.symbol} failed: ${e.message}`, 'down'); } }
+        if (why) { try { await S.broker.closePosition(p.id, st === 'reversion' ? 'Bot: back to mean' : 'Bot: sentiment flip'); log(`${why} on ${p.symbol}: closed ${signed(p.profit)}`, cls(p.profit)); } catch (e) { log(`Close ${p.symbol} failed: ${e.message}`, 'down'); } }
       }
       // Entries
       await poll();

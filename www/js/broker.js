@@ -110,7 +110,7 @@
       const p = { id: String(this.nextId++), symbol, type: side === 'BUY' ? 'POSITION_TYPE_BUY' : 'POSITION_TYPE_SELL', volume: +volume.toFixed(2), openPrice: side === 'BUY' ? q.ask : q.bid, stopLoss, takeProfit, time: Date.now(), comment: comment || '' };
       this.positions.push(p); this._save(); return { stringCode: 'TRADE_RETCODE_DONE', positionId: p.id };
     }
-    async closePosition(id) { const p = this.positions.find(x => x.id === id); if (p) { this._close(p, this._mark(p)); this._save(); } return { stringCode: 'TRADE_RETCODE_DONE' }; }
+    async closePosition(id, reason = 'Manual') { const p = this.positions.find(x => x.id === id); if (p) { this._close(p, this._mark(p), reason); this._save(); } return { stringCode: 'TRADE_RETCODE_DONE' }; }
     reset() { this.balance = 10000; this.positions = []; this.deals = []; this._save(); }
     destroy() { this._saveMarket(); clearInterval(this._timer); removeEventListener('pagehide', this._onHide); document.removeEventListener('visibilitychange', this._vis); }
   }
@@ -184,7 +184,7 @@
       if (!['TRADE_RETCODE_DONE', 'TRADE_RETCODE_PLACED', 'TRADE_RETCODE_DONE_PARTIAL'].includes(r.stringCode)) throw new Error(r.message || r.stringCode);
       return r;
     }
-    async closePosition(id) { return this._req(`${this.client}/trade`, { method: 'POST', body: JSON.stringify({ actionType: 'POSITION_CLOSE_ID', positionId: String(id) }) }); }
+    async closePosition(id, reason = 'Manual') { return this._req(`${this.client}/trade`, { method: 'POST', body: JSON.stringify({ actionType: 'POSITION_CLOSE_ID', positionId: String(id), comment: ('TBX ' + reason).slice(0, 26) }) }); }
     destroy() {}
   }
 
@@ -223,7 +223,7 @@
     async trade({ symbol, side, volume, stopLoss, takeProfit, comment }) {
       return this._req('/trade', { method: 'POST', body: JSON.stringify({ symbol, side, volume, stopLoss: stopLoss ?? null, takeProfit: takeProfit ?? null, comment: comment || '' }) });
     }
-    async closePosition(id) { return this._req(`/positions/${encodeURIComponent(id)}/close`, { method: 'POST' }); }
+    async closePosition(id, reason = 'Manual') { return this._req(`/positions/${encodeURIComponent(id)}/close`, { method: 'POST', body: JSON.stringify({ comment: ('TBX ' + reason).slice(0, 31) }) }); }
     destroy() {}
   }
 
