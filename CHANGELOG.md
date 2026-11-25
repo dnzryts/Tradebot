@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.3] - 2026-11-25
+### Changed
+- **Smoother page swiping.**
+  - The page now follows your finger (slide plus slight fade) and commits when dragged past about 20% of the width or flicked quickly. Otherwise it springs back.
+  - There is no time limit, so slow swipes work, and the first and last tabs rubber-band.
+  - Swipes work over charts. The trade carousel and symbol chips take the swipe only when they actually have more to scroll.
+  - Vertical scrolling is locked while swiping sideways. Live refreshes pause during a swipe. The browser handles vertical panning natively (`touch-action: pan-y`), and the enter animation is faster.
+
 ## [1.6.2] - 2026-11-25
 ### Changed
 - **Dashboard card opacity uses tap-only controls instead of a slider**, so scrolling through Profile can't change it by accident. There are − / + buttons (5% steps, 15–100%, disabled at the limits) and one-tap presets: 25%, 50%, 65%, 80%, 100%.

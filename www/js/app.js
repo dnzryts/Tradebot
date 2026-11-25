@@ -247,25 +247,50 @@
     const scr = $('#view .screen'); if (scr) scr.classList.add(dir > 0 ? 'enter-right' : 'enter-left');
     if (tab === 'markets') analyseAll();
   }
-  /* Swipe left/right anywhere on a tab screen to move to the next/previous tab. */
+  /* Swipe between tabs: the page follows the finger, then commits on distance or a quick flick, or springs back. */
   (function setupSwipeTabs() {
-    let x0 = null, y0 = 0, t0 = 0;
+    let sx = null, sy = 0, mode = null, scr = null, dx = 0, lastX = 0, lastT = 0, vx = 0;
+    const canScrollX = el => el && el.scrollWidth > el.clientWidth + 2;
+    const reset = () => { if (scr) { scr.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s'; scr.style.transform = ''; scr.style.opacity = ''; const el = scr; setTimeout(() => { el.style.transition = ''; el.style.willChange = ''; }, 240); } };
     document.addEventListener('touchstart', e => {
-      x0 = null;
+      sx = null; mode = null;
       if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
       const t = e.touches[0];
-      if (t.clientX < 24 || t.clientX > innerWidth - 24) return;            // leave screen edges to Android's back gesture
-      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad, .tslider')) return; // these scroll/drag themselves
-      x0 = t.clientX; y0 = t.clientY; t0 = performance.now();
+      if (t.clientX < 20 || t.clientX > innerWidth - 20) return;            // screen edges belong to Android's back gesture
+      if (e.target.closest('input, textarea, select, .nav, .keypad')) return;
+      const sc = e.target.closest('.tslider, .tabs-mini'); if (sc && canScrollX(sc)) return; // let real horizontal lists scroll
+      scr = $('#view .screen'); if (!scr) return;
+      sx = lastX = t.clientX; sy = t.clientY; lastT = performance.now(); dx = 0; vx = 0;
     }, { passive: true });
-    document.addEventListener('touchend', e => {
-      if (x0 == null) return;
-      const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0, dt = performance.now() - t0; x0 = null;
-      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.6 || dt > 700) return;
-      const i = TAB_ORDER.indexOf(S.tab), j = i + (dx < 0 ? 1 : -1);
-      if (j < 0 || j >= TAB_ORDER.length) return;
-      goTab(TAB_ORDER[j], false, dx < 0 ? 1 : -1);
-    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (sx == null) return;
+      const t = e.touches[0], ddx = t.clientX - sx, ddy = t.clientY - sy;
+      if (!mode) {
+        if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+        mode = Math.abs(ddx) > Math.abs(ddy) * 1.1 ? 'h' : 'v';
+        if (mode === 'h') { S._dragging = true; scr.style.transition = 'none'; scr.style.willChange = 'transform, opacity'; }
+      }
+      if (mode !== 'h') return;
+      if (e.cancelable) e.preventDefault();                                  // no vertical scrolling while swiping sideways
+      const now = performance.now(); vx = (t.clientX - lastX) / Math.max(1, now - lastT); lastX = t.clientX; lastT = now;
+      const i = TAB_ORDER.indexOf(S.tab), edge = (ddx > 0 && i === 0) || (ddx < 0 && i === TAB_ORDER.length - 1);
+      dx = edge ? ddx * .25 : ddx;                                         // rubber-band at the first/last tab
+      scr.style.transform = `translateX(${dx}px)`;
+      scr.style.opacity = String(1 - Math.min(Math.abs(dx) / innerWidth, 1) * .45);
+    }, { passive: false });
+    const end = () => {
+      if (sx == null) return; sx = null;
+      if (mode !== 'h') { mode = null; return; }
+      mode = null; S._dragging = false;
+      const i = TAB_ORDER.indexOf(S.tab), dir = dx < 0 ? 1 : -1, j = i + dir;
+      const flick = Math.abs(vx) > .3 && Math.sign(vx) === Math.sign(dx) && Math.abs(dx) > 24;
+      if (j >= 0 && j < TAB_ORDER.length && (Math.abs(dx) > innerWidth * .2 || flick)) {
+        scr.style.transition = 'transform .14s ease-in, opacity .14s ease-in';
+        scr.style.transform = `translateX(${-dir * innerWidth * .4}px)`; scr.style.opacity = '0';
+        setTimeout(() => goTab(TAB_ORDER[j], false, dir), 120);
+      } else reset();
+    };
+    document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
   })();
   let lastBack = 0;
   function handleBack() {
@@ -288,7 +313,7 @@
   }
   /* Live refresh: only the screens without form inputs re-render fully. */
   function refreshLive() {
-    if (!S.unlocked || !$('#view')) return;
+    if (!S.unlocked || !$('#view') || S._dragging) return;
     if (['home', 'markets', 'portfolio'].includes(S.tab)) renderView();
     if (S.tab === 'bot') { const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
       const rd = $('#radar'); if (rd) paint(rd, radarHtml(), 'radar'); }

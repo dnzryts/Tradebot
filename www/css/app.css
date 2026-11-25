@@ -372,3 +372,11 @@ html.private #eq { display: none; }
 .presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
 .presets button { padding: 9px 0; border-radius: 11px; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--card2); border: 1.5px solid transparent; }
 .presets button.on { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--card2)); }
+
+/* ===== Smoother tab swiping ===== */
+#view { touch-action: pan-y; }                         /* browser handles vertical scroll, JS handles sideways swipes */
+.tslider, .tabs-mini { touch-action: pan-x pan-y; }    /* real horizontal lists keep native scrolling */
+.screen.enter-right { animation: enterRight .22s cubic-bezier(.2,.8,.2,1); }
+.screen.enter-left { animation: enterLeft .22s cubic-bezier(.2,.8,.2,1); }
+@keyframes enterRight { from { opacity: .35; transform: translateX(48px); } to { opacity: 1; transform: none; } }
+@keyframes enterLeft { from { opacity: .35; transform: translateX(-48px); } to { opacity: 1; transform: none; } }
