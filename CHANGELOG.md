@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0] - 2026-11-25
+### Added
+- **👁 Hide sensitive data.** An eye button in the top bar of every screen hides money amounts as `$•••••`, with no win/loss colours. This covers equity, balance, margin, every P/L (trade cards, Portfolio, dialogs, messages, activity log), your email and MT5 login, and the equity chart. Prices and lot sizes stay visible.
+- **Profile → Privacy:**
+  - *Hide amounts when the app opens*: the default mode, applied at launch and every time the app unlocks.
+  - *Hidden right now*: the same switch as the eye button.
+
 ## [1.5.4] - 2026-11-25
 ### Fixed
 - **Closed trades were all labelled "Manual" in paper mode**, including the bot's own exits (sentiment flip, back to mean), Close all and basket closes. Every close now records its real reason, and Closed trades shows it: 🤖 bot exit, ✋ closed by you, ⛔ Close all, 🎯 take-profit, 🛑 stop-loss. For MT5 accounts the reason is sent with the close order and read back from the deal comment (bridge 1.1.0; MetaApi close comment).

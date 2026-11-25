@@ -1,6 +1,6 @@
 {
   "name": "tradebot",
-  "version": "1.5.4",
+  "version": "1.6.0",
   "description": "Android MT5 auto-trading app with market-sentiment analysis, portfolio tracking, fingerprint lock and themes.",
   "private": true,
   "license": "MIT",

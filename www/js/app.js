@@ -26,7 +26,8 @@
     theme: (t => ['system', 'light'].includes(t) ? t : t ? 'midnight' : 'system')(store.get('themeV2') ? store.get('theme') : 'system'), // dark styles folded into Midnight
     systemDark: 'midnight',
     heroAlpha: store.get('heroAlpha') ?? 0.65,
-    prefs: { confirmClose: 'always', ...(store.get('prefs') || {}) },   // confirmClose: always | loss | off      // dashboard card opacity (0.15–1)
+    prefs: { confirmClose: 'always', hideByDefault: false, ...(store.get('prefs') || {}) },
+    privacy: false,                                  // amounts hidden right now (eye button)   // confirmClose: always | loss | off      // dashboard card opacity (0.15–1)
     onboarded: store.get('onboarded') || false,
     conn: store.get('conn') || { mode: 'demo' },  // {mode:'demo'|'mt5', accountId, region, login, server}
     bot: { ...DEFAULT_BOT, ...(store.get('bot') || {}) },
@@ -39,13 +40,19 @@
 
   /* ---------------- Helpers ---------------- */
   const fmt = (v, d = 2) => (v ?? 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-  const money = (v, c = S.account?.currency || 'USD') => (v < 0 ? '-' : '') + (c === 'USD' ? '$' : c + ' ') + fmt(Math.abs(v));
-  const signed = v => (v >= 0 ? '+' : '-') + money(Math.abs(v)).replace('-', '');
+  const MASK = '•••••';
+  const cur = (c = S.account?.currency || 'USD') => c === 'USD' ? '$' : c + ' ';
+  const money = (v, c) => S.privacy ? cur(c) + MASK : (v < 0 ? '-' : '') + cur(c) + fmt(Math.abs(v));
+  const signed = v => S.privacy ? cur() + MASK : (v >= 0 ? '+' : '-') + money(Math.abs(v)).replace('-', '');
+  const maskId = (t, keep = 0) => S.privacy && t ? (keep ? String(t).slice(0, keep) : '') + '••••' : t;
+  const maskEmail = e => S.privacy && e ? e[0] + '•••@' + (e.split('@')[1] || '•••') : e;
+  // Amounts inside stored log lines (written before hiding was turned on)
+  const maskText = t => S.privacy ? String(t).replace(/[+\-−]?\$\s?[\d,]+(\.\d+)?/g, '$' + MASK).replace(/\(([+\-−]?)\$[\d,.]+\)/g, '($' + MASK + ')') : t;
   const digits = sym => S.digitsOf?.[sym] ?? Brokers.SPECS[sym]?.digits ?? (sym.includes('JPY') ? 3 : 5);
   const px = (sym, v) => fmt(v, digits(sym));
   const time = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const cls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
+  const cls = v => S.privacy ? '' : v > 0 ? 'up' : v < 0 ? 'down' : '';   // no win/loss colours while amounts are hidden
   const sentCls = s => s >= 25 ? 'up' : s <= -25 ? 'down' : 'neutral';
   const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); store.set('prefs', S.prefs); };
   let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -107,6 +114,8 @@
 
   /* ---------------- Icons ---------------- */
   const P = {
+    eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeoff: '<path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/>',
     home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
     chart: '<path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 6-6"/>',
     bot: '<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M8 14h.01M16 14h.01M9 18h6"/>',
@@ -201,7 +210,7 @@
       <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}">${n}</button>`).join('')}<span></span><button data-n="0">0</button><button data-n="del">${icon('del')}</button></div>
     </div>`;
     const dots = () => $$('.pin-dots i').forEach((d, k) => d.classList.toggle('on', k < pin.length));
-    const unlock = () => { S.unlocked = true; render(); boot(); };
+    const unlock = () => { S.unlocked = true; S.privacy = !!S.prefs.hideByDefault; document.documentElement.classList.toggle('private', S.privacy); render(); boot(); };
     $$('.keypad button').forEach(b => b.onclick = async () => {
       const n = b.dataset.n; if (n === 'del') pin = pin.slice(0, -1); else if (pin.length < 6) pin += n; dots();
       if (pin.length === 6) {
@@ -288,14 +297,25 @@
   }
 
   const topbar = (title) => `<div class="topbar"><div><div class="hello">${greeting()}, ${esc(S.profile.name)}</div><h2>${title}</h2></div>
-    <div class="row" style="gap:8px"><button class="ring" id="ring" data-keep title="Live data · tap to refresh now">${ringSvg}</button>
+    <div class="row" style="gap:8px"><button class="icon-btn eye ${S.privacy ? 'on' : ''}" id="eyebtn" aria-label="${S.privacy ? 'Show amounts' : 'Hide amounts'}" title="${S.privacy ? 'Show amounts' : 'Hide amounts'}">${icon(S.privacy ? 'eyeoff' : 'eye')}</button>
+    <button class="ring" id="ring" data-keep title="Live data · tap to refresh now">${ringSvg}</button>
     <button class="icon-btn" id="connbtn" title="Account">${isLive() ? `<span class="dot ${S.status === 'Connected' ? 'live' : ''}"></span>` : icon('link')}</button></div></div>`;
   const ringSvg = '<svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle class="prog" cx="18" cy="18" r="15"/></svg><i></i>';
   const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
   const bindTop = () => {
     const b = $('#connbtn'); if (b) b.onclick = openConnect;
+    const e = $('#eyebtn'); if (e) e.onclick = () => setPrivacy(!S.privacy, true);
     const r = $('#ring'); if (r && !r.onclick) { r.onclick = () => { poll(); analyseAll(); }; ringCycle(); }
   };
+  /* Eye button: hide/show money amounts and account identifiers everywhere. */
+  function setPrivacy(on, announce) {
+    S.privacy = on;
+    document.documentElement.classList.toggle('private', on);
+    if ($('#view')) { $('#view').dataset.view = ''; renderView(); }
+    const sh = $('#symsheet'); if (sh) { $('#symbody').dataset.view = ''; symbolSheetUpdate(); }
+    const cl = $('#closelist'); if (cl) paint(cl, closeRowsHtml(), 'close');
+    if (announce) toast(on ? '🙈 Amounts hidden' : '👁 Amounts visible');
+  }
   /* Circular countdown to the next refresh; spins while a refresh is in flight. */
   function ringCycle() {
     const r = $('#ring'); if (!r) return;
@@ -556,7 +576,7 @@
     const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
     scheduleBot(true);
   }
-  const logRow = l => `<div><time>${time(l.t)}</time><span class="${l.kind}">${esc(l.msg)}</span></div>`;
+  const logRow = l => `<div><time>${time(l.t)}</time><span class="${l.kind}">${esc(maskText(l.msg))}</span></div>`;
   const logHtml = () => S.log.map(logRow).join('') || '<div class="empty">No activity yet</div>';
 
   /* ---------- Portfolio ---------- */
@@ -578,7 +598,7 @@
     </div>`, 'portfolio');
     bindTop(); bindPositions(v);
     const pts = []; let run = (a.balance ?? 0) - realized; pts.push(run); h.slice().reverse().forEach(d => pts.push(run += d.profit)); pts.push(a.equity ?? run);
-    drawLine($('#eq'), pts);
+    if (!S.privacy) drawLine($('#eq'), pts);
   }
   /* Who/what closed a trade: paper keeps an explicit reason; MT5 deals carry it in the close comment. */
   function closeWhy(d) {
@@ -668,10 +688,10 @@
     const p = S.profile;
     v.innerHTML = `<div class="screen">${topbar('Profile')}
       <div class="card row"><div class="avatar" style="background:${p.color};color:#fff;width:58px;height:58px;border-radius:20px;font-size:22px">${esc(p.name[0]).toUpperCase()}</div>
-        <div class="grow"><div class="title" style="font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.email || 'No email')} · since ${new Date(p.created).toLocaleDateString()}</div>
+        <div class="grow"><div class="title" style="font-size:18px">${esc(p.name)}</div><div class="sub">${esc(maskEmail(p.email) || 'No email')} · since ${new Date(p.created).toLocaleDateString()}</div>
         <span class="chip" style="margin-top:6px">${RISK_PRESETS[p.riskProfile]?.label || 'Custom'} investor</span></div></div>
       <h3>Trading account</h3><div class="card"><div class="row between"><div class="row"><div class="avatar">${S.conn.mode === 'bridge' ? 'VPS' : isLive() ? 'MT5' : 'SIM'}</div>
-        <div><div class="title">${isLive() ? `MT5 · ${esc(S.conn.login || S.conn.accountId?.slice(0, 8))}` : 'Paper trading'}</div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
+        <div><div class="title">${isLive() ? `MT5 · ${esc(maskId(S.conn.login || S.conn.accountId?.slice(0, 8), 2))}` : 'Paper trading'}</div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
         <button class="btn small" id="conn">${isLive() ? 'Manage' : 'Connect MT5'}</button></div></div>
       <h3>Appearance</h3><div class="card">
         <div class="seg" id="tmode3"><button data-a="system" class="${S.theme === 'system' ? 'on' : ''}">System</button><button data-a="light" class="${S.theme === 'light' ? 'on' : ''}">Light</button><button data-a="dark" class="${S.theme !== 'system' && S.theme !== 'light' ? 'on' : ''}">Dark</button></div>
@@ -685,6 +705,10 @@
         <div class="field"><label>Email</label><input class="input" id="pemail" value="${esc(p.email)}"></div>
         <div class="field"><label>Investor risk profile</label><div class="seg" id="prisk">${Object.entries(RISK_PRESETS).map(([k, r]) => `<button data-k="${k}" class="${p.riskProfile === k ? 'on' : ''}">${r.label}</button>`).join('')}</div></div>
         <button class="btn" id="psave">Save profile</button></div>
+      <h3>Privacy</h3><div class="card">
+        <div class="row between list-item"><div><div class="title">Hide amounts when the app opens</div><div class="sub">Start with balances, P/L, email and MT5 login hidden. Tap the 👁 eye at the top of any screen to show or hide them.</div></div><label class="toggle"><input type="checkbox" id="phide" ${S.prefs.hideByDefault ? 'checked' : ''}><span></span></label></div>
+        <div class="row between list-item"><div><div class="title">Hidden right now</div><div class="sub">Same as the eye button</div></div><label class="toggle"><input type="checkbox" id="pnow" ${S.privacy ? 'checked' : ''}><span></span></label></div>
+      </div>
       <h3>Trading safety</h3><div class="card">
         <div class="title">Confirm before closing a trade</div><div class="sub" style="margin-bottom:10px">Ask before a single trade is closed from its Close button.</div>
         <div class="seg" id="cconf">${[['always', 'All trades'], ['loss', 'Losing only'], ['off', 'Off']].map(([k, l]) => `<button data-c="${k}" class="${S.prefs.confirmClose === k ? 'on' : ''}">${l}</button>`).join('')}</div>
@@ -708,6 +732,8 @@
     $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };
     $('#pbio').onchange = async e => { if (e.target.checked && !(await Security.verify('Enable fingerprint unlock'))) { e.target.checked = false; return; } p.biometric = e.target.checked; save(); toast(p.biometric ? 'Fingerprint enabled' : 'Fingerprint disabled'); };
     $('#ppin').onclick = changePin;
+    $('#phide').onchange = e => { S.prefs.hideByDefault = e.target.checked; save(); toast(e.target.checked ? 'Amounts will be hidden each time the app opens' : 'Amounts shown when the app opens'); };
+    $('#pnow').onchange = e => setPrivacy(e.target.checked, true);
     $$('#cconf button').forEach(b => b.onclick = () => { S.prefs.confirmClose = b.dataset.c; save(); $$('#cconf button').forEach(x => x.classList.toggle('on', x === b)); toast(b.dataset.c === 'off' ? 'Close confirmation off' : b.dataset.c === 'loss' ? 'Confirm closing losing trades' : 'Confirm closing every trade'); });
     $('#plock').onclick = () => { S.unlocked = false; render(); };
     $('#nsave').onclick = () => { S.newsKey = $('#nkey').value.trim(); store.set('newsKey', S.newsKey); toast(S.newsKey ? 'News sentiment enabled' : 'News sentiment off'); };

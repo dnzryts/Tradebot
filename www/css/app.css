@@ -358,3 +358,8 @@ html, body { overflow-x: hidden; }
 #botsettings.locked { opacity: .55; filter: saturate(.6); }
 #botsettings.locked button, #botsettings.locked input, #botsettings.locked label, #botsettings.locked .seg { pointer-events: none; }
 #botsettings { transition: opacity .2s, filter .2s; }
+
+/* ===== Privacy (eye) ===== */
+.icon-btn.eye svg.i { width: 21px; height: 21px; }
+.icon-btn.eye.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+html.private #eq { display: none; }

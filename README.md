@@ -25,6 +25,7 @@
 | Area | What you get |
 |---|---|
 | 👋 **Welcome & onboarding** | Swipeable 3-step intro, then a guided profile setup |
+| 👁 **Privacy mode** | Eye button hides balances, P/L and account details; can be on by default at launch |
 | 🔐 **Fingerprint lock** | Android BiometricPrompt unlock with a 6-digit PIN fallback; the app re-locks after 60 s in the background |
 | 🔑 **Secure credentials** | MetaApi token stored in the Android Keystore via the biometric plugin. Your MT5 password is never stored on the phone |
 | 🔗 **MT5 account setup** | Two ways: **Own VPS bridge** (free, runs next to MT5 on your Windows PC/VPS using MetaQuotes' official Python package, see [docs/VPS_BRIDGE.md](docs/VPS_BRIDGE.md)) or [MetaApi](https://metaapi.cloud) (paid cloud, no PC needed) |
