@@ -328,3 +328,4 @@ html, body { overflow-x: hidden; }
 .flash-down { animation: glowDown .9s ease; background: none !important; }
 @keyframes glowUp { 0% { text-shadow: 0 0 12px color-mix(in srgb, var(--up) 85%, transparent); } 100% { text-shadow: none; } }
 @keyframes glowDown { 0% { text-shadow: 0 0 12px color-mix(in srgb, var(--down) 85%, transparent); } 100% { text-shadow: none; } }
+.linkbtn { color: var(--accent); font-weight: 700; padding: 0 4px; }

@@ -392,10 +392,16 @@
     const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'symsheet';
     bg.innerHTML = `<div class="sheet"><div class="grip"></div><div id="symbody"></div></div>`;
     document.body.appendChild(bg); attachSheet(bg); symbolSheetUpdate(true);
+    S.specs ||= {};
+    const fillSugg = () => { const a = S.analysis[sym], li = $('#lot'); if (li && a && S.bot.targetMode === 'usd' && S.specs[sym] && document.activeElement !== li) li.value = fmt(usdPlan(sym, a, S.specs[sym], S.bot.tpAtr).lot); };
+    if (S.specs[sym]) fillSugg();
+    else S.broker?.getSpec(sym).then(sp => { S.specs[sym] = sp; symbolSheetUpdate(); fillSugg(); }).catch(() => { });
   }
   function symbolSheetUpdate(first) {
     const sym = S.focus, a = S.analysis[sym], body = $('#symbody'); if (!body) return;
-    const lot = $('#lot')?.value || '0.10';
+    const usd = S.bot.targetMode === 'usd', sp = S.specs?.[sym];
+    const sugg = usd && a && sp ? usdPlan(sym, a, sp, S.bot.tpAtr).lot : null;
+    const lot = $('#lot')?.value || (sugg != null ? fmt(sugg) : '0.10');
     paint(body, `<div class="row between"><div><h2>${sym}</h2><div class="sub mono">${a ? px(sym, a.price) : '—'} · ATR ${a ? px(sym, a.atr) : '—'}</div></div>
       ${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '+' : ''}${a.score} · ${a.label}</span>` : ''}</div>
       <div class="chart-box" style="margin:12px 0"><canvas id="symchart" height="230"></canvas></div>
@@ -405,14 +411,30 @@
         <div class="card" style="background:var(--card2)">${a.factors.map(f => `<div class="factor"><span class="muted">${f.key}</span><div class="bar"><i style="left:${f.v < 0 ? 50 + f.v / 2 : 50}%;width:${Math.abs(f.v) / 2}%;background:${f.v >= 0 ? 'var(--up)' : 'var(--down)'}"></i><i style="left:50%;width:1px;background:var(--muted)"></i></div><span class="mono right ${cls(f.v)}">${f.v > 0 ? '+' : ''}${f.v}</span></div>`).join('')}</div>` : '<div class="empty">Analysing…</div>'}
       <div class="field"><label>Lot size</label><input class="input mono" id="lot" type="number" step="0.01" min="0.01" value="${lot}"></div>
       <div class="grid2"><button class="btn" style="background:var(--up)" data-side="BUY">Buy</button><button class="btn danger" data-side="SELL">Sell</button></div>
-      <p class="hint">Stop-loss / take-profit are set from ATR × ${S.bot.slAtr} / ${S.bot.tpAtr} (Auto-Trade settings).</p>`, 'sym:' + sym);
+      <p class="hint">${usd ? `Fixed targets: <b class="up">+$${fmt(S.bot.tpUsd)}</b> / <b class="down">−$${fmt(S.bot.slUsd)}</b> per trade (Auto-Trade settings).${sugg != null ? ` Lot that fits ${sym}: <b>${fmt(sugg)}</b> <button class="linkbtn" id="usesugg" data-l="${fmt(sugg)}">Use</button>` : ''}` : `Stop-loss / take-profit are set from ATR × ${S.bot.slAtr} / ${S.bot.tpAtr} (Auto-Trade settings).`}</p>`, 'sym:' + sym);
+    const us = $('#usesugg', body); if (us) us.onclick = () => { $('#lot').value = us.dataset.l; };
     $$('[data-side]', body).forEach(b => b.onclick = () => manualTrade(sym, b.dataset.side, +$('#lot').value));
     drawChart($('#symchart'), sym);
   }
   async function manualTrade(sym, side, volume) {
     if (!(volume > 0)) return toast('Enter a lot size');
+    let opt = {};
+    if (S.bot.targetMode === 'usd') {
+      const f = await usdFit(sym, volume).catch(() => null);
+      if (f?.tight) {
+        const dp = digits(sym);
+        const why = `At <b>${fmt(volume)} lot</b>, a ±$${fmt(Math.min(S.bot.tpUsd, S.bot.slUsd))} target is only <b>${fmt(f.dist, dp)}</b> from the entry, less than 3× the current spread (${fmt(f.spread, dp)}). Normal price noise would close it almost at once.`;
+        if (f.suggestedOk && f.suggested !== volume) {
+          if (!(await ask({ title: 'Target too close for this lot', message: `${why}<br><br>Use <b>${fmt(f.suggested)} lot</b> instead to keep +$${fmt(S.bot.tpUsd)} / −$${fmt(S.bot.slUsd)}.`, ok: `Use ${fmt(f.suggested)} lot`, ic: 'chart' }))) return;
+          volume = f.suggested; const li = $('#lot'); if (li) li.value = fmt(volume);
+        } else {
+          if (!(await ask({ title: 'Target too close for this lot', message: `${why}<br><br>Place this trade with volatility-based stops instead (ATR × ${S.bot.slAtr} / ${S.bot.tpAtr})?`, ok: 'Use ATR stops', ic: 'chart' }))) return;
+          opt = { forceAtr: true };
+        }
+      }
+    }
     if (isLive() && !(await ask({ title: `Place live ${side.toLowerCase()} order?`, message: `<b>${side} ${volume} lot ${sym}</b> at market on your MT5 account. Stop-loss and take-profit are set automatically.`, ok: `${side} ${sym}`, tone: side === 'BUY' ? 'up' : 'danger', ic: 'chart' }))) return;
-    try { await placeOrder(sym, side, volume, 'Manual'); toast(`${side} ${volume} ${sym} placed`); $('#symsheet')?.remove(); poll(); }
+    try { await placeOrder(sym, side, volume, 'Manual', opt); toast(`${side} ${volume} ${sym} placed`); $('#symsheet')?.remove(); poll(); }
     catch (e) { toast('Order failed: ' + e.message); }
   }
 
@@ -903,8 +925,16 @@
     const cs = spec.contractSize || 1, step = spec.volumeStep || .01, minV = spec.minVolume || .01;
     const conv = quoteConv(sym, spec, a.price);
     let lot = lotOverride || Math.round(S.bot.tpUsd * conv / (tpAtr * a.atr * cs) / step) * step;
-    lot = +Math.min(Math.max(lot, minV), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
+    lot = +Math.min(Math.max(lot, minV), spec.maxVolume || 100, lotOverride ? Infinity : S.bot.maxLot).toFixed(2);
     return { lot, tpDist: S.bot.tpUsd * conv / (lot * cs), slDist: S.bot.slUsd * conv / (lot * cs) };
+  }
+  /* Would the fixed-$ target sit too close to the price at this lot? Also returns the lot that fits. */
+  async function usdFit(sym, volume) {
+    const a = S.analysis[sym]; if (!a) return null;
+    const spec = await S.broker.getSpec(sym), q = await S.broker.getPrice(sym), spread = q.ask - q.bid;
+    const mine = usdPlan(sym, a, spec, S.bot.tpAtr, volume), auto = usdPlan(sym, a, spec, S.bot.tpAtr);
+    const tight = p => Math.min(p.slDist, p.tpDist) < spread * 3;
+    return { tight: tight(mine), dist: Math.min(mine.slDist, mine.tpDist), spread, suggested: auto.lot, suggestedOk: !tight(auto) };
   }
   async function placeOrder(sym, side, volume, comment, opt = {}) {
     const slM = opt.slAtr ?? S.bot.slAtr, tpM = opt.tpAtr ?? S.bot.tpAtr;
@@ -912,14 +942,15 @@
     const entry = side === 'BUY' ? q.ask : q.bid, d = spec.digits ?? digits(sym), r = v => +v.toFixed(d);
     const atr = a?.atr || 0;
     let slD = atr * slM, tpD = atr * tpM;
-    if (S.bot.targetMode === 'usd' && a) {
+    const usdMode = S.bot.targetMode === 'usd' && a && !opt.forceAtr;
+    if (usdMode) {
       const plan = usdPlan(sym, a, spec, tpM, volume); slD = plan.slDist; tpD = plan.tpDist;
       if (Math.min(slD, tpD) < (q.ask - q.bid) * 3) throw new Error(`$ target too small for ${sym} spread at ${volume} lot`);
     }
     const sl = slD ? r(side === 'BUY' ? entry - slD : entry + slD) : undefined;
     const tp = tpD ? r(side === 'BUY' ? entry + tpD : entry - tpD) : undefined;
     const res = await S.broker.trade({ symbol: sym, side, volume, stopLoss: sl, takeProfit: tp, comment });
-    log(`${opt.tag ? opt.tag + ' ' : ''}${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}${S.bot.targetMode === 'usd' && a ? ` (+$${fmt(S.bot.tpUsd)} / −$${fmt(S.bot.slUsd)})` : ''}`, side === 'BUY' ? 'up' : 'down');
+    log(`${opt.tag ? opt.tag + ' ' : ''}${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}${usdMode ? ` (+$${fmt(S.bot.tpUsd)} / −$${fmt(S.bot.slUsd)})` : ''}`, side === 'BUY' ? 'up' : 'down');
     return res;
   }
 

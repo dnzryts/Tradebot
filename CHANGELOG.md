@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1] - 2026-11-25
+### Fixed
+- **Manual orders in Fixed $ mode no longer fail with a bare "target too small" error.**
+  - The trade panel pre-fills the lot that fits your $ targets for that symbol (e.g. 0.01 for XAUUSD at $3), shows the targets, and has a one-tap **Use** for the suggested lot.
+  - If you enter a larger lot, a dialog explains that the target would sit closer than 3× the spread. It offers the suggested lot, or ATR-based stops for that one trade when no lot fits.
+- Manual lots above *Max lot* were capped when SL/TP distances were calculated, even though the order was sent at the full lot. The $ result could be several times the target. Manual lots are now used as entered (within broker limits); Max lot applies only to the bot.
+- The trade panel footnote showed ATR multiples even in Fixed $ mode.
+
 ## [1.5.0] - 2026-11-25
 ### Added
 - **Live trades on the Dashboard**, right under the equity card:
