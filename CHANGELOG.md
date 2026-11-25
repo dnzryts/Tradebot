@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.3] - 2026-11-25
+### Changed
+- Dashboard **Live trades is now a single card**: floating P/L summary on top, then one trade at a time at full card width.
+  - Swipe left/right, use the ◀ ▶ arrows, or tap the dots to move between trades; a counter shows e.g. "2 / 3".
+  - The visible trade is kept through live refreshes. Closing it moves to the next one.
+
 ## [1.5.2] - 2026-11-25
 ### Changed
 - Dashboard live trade cards are stacked vertically (full width, one under another) instead of a sideways-scrolling row. Swiping left or right on them switches tabs like anywhere else.

@@ -244,7 +244,7 @@
       if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
       const t = e.touches[0];
       if (t.clientX < 24 || t.clientX > innerWidth - 24) return;            // leave screen edges to Android's back gesture
-      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad')) return; // these scroll/drag themselves
+      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad, .tslider')) return; // these scroll/drag themselves
       x0 = t.clientX; y0 = t.clientY; t0 = performance.now();
     }, { passive: true });
     document.addEventListener('touchend', e => {
@@ -328,7 +328,7 @@
     </div>`, 'home');
     bindTop();
     $$('#focus button').forEach(b => b.onclick = () => { S.focus = b.dataset.s; renderView(); });
-    bindPositions(v);
+    bindPositions(v); bindTradeSlider(v);
     drawChart($('#chart'), S.focus);
   }
   const watch = () => S.bot.symbols.length ? S.bot.symbols : ['EURUSD'];
@@ -352,12 +352,33 @@
     </div>`;
   }
   function liveTradesHtml() {
-    const ps = S.positions, tot = ps.reduce((x, p) => x + p.profit, 0), botN = ps.filter(isBot).length;
-    return `${posHeader('Live trades' + (ps.length ? ' · ' + ps.length : ''))}
-      ${ps.length ? `<div class="card tsum"><div><div class="sub">Floating P/L</div><div class="mono ${cls(tot)}" style="font-size:22px;font-weight:800">${signed(tot)}</div></div>
-        <div class="right"><div class="sub">${ps.filter(p => p.type === 'POSITION_TYPE_BUY').length} buy · ${ps.filter(p => p.type !== 'POSITION_TYPE_BUY').length} sell</div><div class="sub">🤖 ${botN} bot · ✋ ${ps.length - botN} manual</div></div></div>
-        <div class="trades-scroll" data-keep-scroll>${ps.map(tradeCard).join('')}</div>`
-      : `<div class="card empty" style="padding:18px">No open trades. Trades from the bot and your manual orders appear here live.</div>`}`;
+    const ps = S.positions, n = ps.length, tot = ps.reduce((x, p) => x + p.profit, 0), botN = ps.filter(isBot).length;
+    S.tradeIdx = Math.min(S.tradeIdx || 0, Math.max(0, n - 1));
+    if (!n) return `${posHeader('Live trades')}<div class="card empty" style="padding:18px">No open trades. Trades from the bot and your manual orders appear here live.</div>`;
+    return `${posHeader('Live trades · ' + n)}
+      <div class="card livecard">
+        <div class="row between lsum"><div><div class="sub">Floating P/L</div><div class="mono ${cls(tot)}" style="font-size:22px;font-weight:800">${signed(tot)}</div></div>
+          <div class="right"><div class="sub">${ps.filter(p => p.type === 'POSITION_TYPE_BUY').length} buy · ${ps.filter(p => p.type !== 'POSITION_TYPE_BUY').length} sell</div><div class="sub">🤖 ${botN} bot · ✋ ${n - botN} manual</div></div></div>
+        <div class="tslider" id="tslider">${ps.map(tradeCard).join('')}</div>
+        ${n > 1 ? `<div class="tnav"><button class="tarrow" data-dir="-1" aria-label="Previous trade" ${S.tradeIdx === 0 ? 'disabled' : ''}>${icon('back')}</button>
+          <div class="tdots">${ps.map((p, k) => `<i data-i="${k}" class="${k === S.tradeIdx ? 'on' : ''}"></i>`).join('')}<span class="mono">${S.tradeIdx + 1} / ${n}</span></div>
+          <button class="tarrow next" data-dir="1" aria-label="Next trade" ${S.tradeIdx === n - 1 ? 'disabled' : ''}>${icon('back')}</button></div>` : ''}
+      </div>`;
+  }
+  /* One-card trade carousel: swipe / arrows / dots; remembers the visible trade across live refreshes. */
+  function bindTradeSlider(root) {
+    const sl = $('#tslider', root); if (!sl) return;
+    const go = k => { const n = sl.children.length; k = Math.max(0, Math.min(n - 1, k)); sl.scrollTo({ left: k * sl.clientWidth, behavior: 'smooth' }); };
+    const sync = () => {
+      const n = sl.children.length, k = Math.max(0, Math.min(n - 1, Math.round(sl.scrollLeft / Math.max(1, sl.clientWidth))));
+      if (k === S.tradeIdx) return; S.tradeIdx = k;
+      $$('.tdots i', root).forEach((d, i) => d.classList.toggle('on', i === k));
+      const c = $('.tdots span', root); if (c) c.textContent = `${k + 1} / ${n}`;
+      $$('.tarrow', root).forEach(b => b.disabled = (+b.dataset.dir < 0 ? k === 0 : k === n - 1));
+    };
+    if (!sl._bound) { sl._bound = true; sl.addEventListener('scroll', () => { clearTimeout(sl._t); sl._t = setTimeout(sync, 60); }, { passive: true }); requestAnimationFrame(() => { sl.scrollLeft = (S.tradeIdx || 0) * sl.clientWidth; }); }
+    $$('.tarrow', root).forEach(b => b.onclick = () => go(S.tradeIdx + +b.dataset.dir));
+    $$('.tdots i', root).forEach(d => d.onclick = () => go(+d.dataset.i));
   }
   const isLive = () => S.conn.mode !== 'demo';
   const isBot = p => /^TB /.test(p.comment || '');
