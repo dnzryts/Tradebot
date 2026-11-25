@@ -83,12 +83,16 @@ Notes:
 
 ## 2c. Entry rules (common)
 
+The bot decides on **closed candles only**. The last candle from the broker is still forming, so it is dropped before analysis, and the bot acts at most **once per newly closed candle** per symbol. The scan interval only controls how quickly a new candle is noticed.
+
 A trade opens when **all** of these are true:
 1. The bot is enabled and the daily loss limit has not been hit
 2. `|score| ≥ threshold` (BUY if positive, SELL if negative)
 3. `confidence ≥ min confidence`
 4. There is no open position on that symbol already
 5. Bot positions are below **max open positions**
+6. **Follow the bigger trend** (on by default): on the next timeframe up (5m/15m → 1h, 1h → 4h, 4h → 1d), EMA20 is above EMA50 for a BUY, below for a SELL
+7. **Spread guard**: the current spread is at most 10% of the stop-loss distance
 
 Candidates are ranked by `|score|`, so the strongest signals fill the free slots first.
 
@@ -109,7 +113,8 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 ## 4. Exit rules
 
 - Broker-side **SL / TP** are always attached to the order
-- **Exit on sentiment flip** (optional): a bot BUY closes when the symbol's signal becomes SELL, and the reverse
+- **Exit on sentiment flip** (optional): after the trade has lasted at least **4 closed candles**, a bot BUY closes when the closed-candle score falls to **−1.5 × threshold** or lower, and the reverse for a SELL. (Before v1.8 this fired at 0.6 × threshold on the forming candle, which closed most trades on noise.)
+- **Reversion** trades close when price returns to the middle Bollinger band
 - Manual close at any time from Home or Portfolio
 
 ## 5. Kill-switches
@@ -123,14 +128,37 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 
 ## 6. Risk presets
 
-| Preset | Risk/trade | Threshold | Min conf. | Max pos. | Daily stop | SL × ATR | TP × ATR |
-|---|---|---|---|---|---|---|---|
-| Conservative | 0.5% | ±50 | 60% | 2 | −2% | 2.0 | 3.0 |
-| Balanced | 1% | ±40 | 50% | 3 | −4% | 1.8 | 3.0 |
-| Aggressive | 2% | ±30 | 40% | 5 | −8% | 1.5 | 2.5 |
+| Preset | Timeframe | Risk/trade | Threshold | Min conf. | Max pos. | Daily stop | SL × ATR | TP × ATR |
+|---|---|---|---|---|---|---|---|---|
+| Conservative | 1h | 0.5% | ±25 | 80% | 2 | −2% | 4.0 | 7.0 |
+| Balanced | 15m | 1% | ±25 | 80% | 3 | −4% | 4.0 | 7.0 |
+| Aggressive | 15m | 2% | ±20 | 75% | 5 | −8% | 3.5 | 6.0 |
 
-Changing any slider switches the profile to *Custom*.
+All presets turn on *Follow the bigger trend* and *Exit when sentiment flips*. Changing any slider or the timeframe switches the profile to *Custom*.
+
+## 6a. Backtest (v1.8.0)
+
+`tools/backtest/` replays the real engine (`www/js/engine.js`) and the bot rules over MT5 M1 bars, checking SL/TP bar by bar with the spread charged on every trade. Data: [Gianniskas/mt5-m1-bars-us500-eurusd-xauusd](https://github.com/Gianniskas/mt5-m1-bars-us500-eurusd-xauusd), EURUSD, XAUUSD and US500, Jan 2025 to May 2026. Spreads assumed: EURUSD 1.2 pips, gold $0.30, US500 0.55. Results are in **R** (1R = the amount risked per trade; at 1% risk on $10,000, 1R = $100).
+
+```
+DATA=/path/to/mt5bars node tools/backtest/matrix.js '{"from":"2025-06-01"}' cases.json
+```
+
+| Setup | Trades | Win % | Net (Jun 25 – May 26) | Net (Jan – May 25, unseen) | Spread paid |
+|---|---|---|---|---|---|
+| v1.7 logic, 5m, ±23, 83%, SL 4.2, TP 7.2 | 7,141 | 38% | **−466 R** | −100 R | 472 R |
+| v1.7 Balanced preset (15m, SL 1.8, TP 3) | 4,401 | 36% | −275 R | — | 330 R |
+| Random entries, same SL/TP | 1,556 | 34% | −110 R | — | 67 R |
+| v1.8 logic, 5m | 3,240 | 41% | −118 R | −6 R | 199 R |
+| **v1.8 Balanced** (15m) | 1,246 | 44% | **+41 R** | **+9 R** | 38 R |
+| v1.8 Conservative (1h) | 385 | 44% | +15 R | +17 R | 6 R |
+| v1.8 Aggressive (15m) | 1,484 | 42% | +29 R | +19 R | 54 R |
+
+What this showed:
+- The v1.7 bot did about as well as **random entries**. Almost the whole loss was spread: it traded thousands of times on the forming 5-minute candle, and 58% of trades were closed by the sentiment-flip exit at a small loss.
+- Fewer, longer trades on closed candles, with the higher-timeframe filter and a stricter flip exit, turned it into roughly break-even to slightly positive in **both** periods.
+- Every 5-minute setup lost money. The edge that remains is thin (profit factor 1.03–1.2) and came mostly from gold; EURUSD was slightly negative in most setups.
 
 ## 7. Honest caveats
 
-This is a rules-based technical model. It has **not** been backtested against historical data, and past paper-mode results mean nothing for live markets. Before trusting it with money, forward-test it on a demo account for weeks across different market regimes.
+This is a rules-based technical model. The backtest above covers one data source, three symbols and about 16 months; it ignores commission, swaps, slippage and the market-mood overlay, and a thin edge like this can disappear in other conditions. Paper mode uses a **random** price simulator, so paper results say nothing about the strategy, good or bad. Before trusting it with money, forward-test it on a demo account for weeks across different market regimes.

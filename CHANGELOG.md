@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.0] - 2026-11-25
+### Changed
+- **Bot rebuilt after a backtest on real prices.** The bot was replayed over 16 months of real MT5 data (EURUSD, gold, US500). With the old logic and the settings in use (5m, ±23, 83%, SL 4.2, TP 7.2) it lost about 466 R over 7,141 trades, no better than random entries. Nearly all of that loss was spread.
+  - Decisions use **closed candles only**, at most once per new candle. Before, the bot re-read the still-forming candle every 10 seconds and jumped in and out on noise.
+  - **Sentiment-flip exit is stricter.** A trade must last 4+ candles, and the score must swing to 1.5 × the threshold against it. This exit used to close 58% of trades, mostly at a small loss.
+  - New **Follow the bigger trend** filter (on by default). The bot only buys when the next timeframe up (for example 1h for 15m) is trending up, and only sells when it is trending down.
+  - New **spread guard**: the bot skips a trade when the spread is more than 10% of the stop distance.
+  - **New tested presets.** Balanced: 15m, ±25, 80%, SL 4 / TP 7 ATR. Conservative: 1h. Aggressive: 15m, ±20, 75%, SL 3.5 / TP 6. The old presets lost money because their tight stops made spread a large share of each trade.
+  - Results with the new Balanced preset: +41 R from Jun 2025 to May 2026, and +9 R on Jan to May 2025, a period not used for tuning. The edge is thin and came mostly from gold.
+- Auto-Trade shows a one-time prompt to apply the tested settings. A warning appears under Timeframe when 5m is selected.
+
+### Added
+- **Where P/L comes from** on Portfolio: profit and loss grouped by how trades closed (stop-loss, take-profit, sentiment flip, by you), so a leaking exit is easy to spot.
+- `tools/backtest/`: the backtester, and the results table in `docs/STRATEGY.md`.
+
 ## [1.7.5] - 2026-11-25
 ### Changed
 - **Smoother page transitions.** The old curve covered ~80% of the distance in the first half and then braked hard ("hitting a wall").

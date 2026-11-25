@@ -13,11 +13,16 @@
   };
 
   const RISK_PRESETS = {
-    conservative: { label: 'Conservative', riskPct: 0.5, threshold: 50, minConfidence: 60, maxPositions: 2, dailyLossPct: 2, slAtr: 2, tpAtr: 3 },
-    balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 40, minConfidence: 50, maxPositions: 3, dailyLossPct: 4, slAtr: 1.8, tpAtr: 3 },
-    aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 30, minConfidence: 40, maxPositions: 5, dailyLossPct: 8, slAtr: 1.5, tpAtr: 2.5 },
+    // Tuned in v1.8.0 by replaying the bot over 16 months of real MT5 M1 bars (EURUSD, XAUUSD, US500).
+    // The old presets (tight 1.5–2 ATR stops) lost: spread ate most trades. See docs/STRATEGY.md.
+    conservative: { label: 'Conservative', riskPct: 0.5, threshold: 25, minConfidence: 80, maxPositions: 2, dailyLossPct: 2, slAtr: 4, tpAtr: 7, timeframe: '1h', htfFilter: true, exitOnFlip: true },
+    balanced:     { label: 'Balanced',     riskPct: 1,   threshold: 25, minConfidence: 80, maxPositions: 3, dailyLossPct: 4, slAtr: 4, tpAtr: 7, timeframe: '15m', htfFilter: true, exitOnFlip: true },
+    aggressive:   { label: 'Aggressive',   riskPct: 2,   threshold: 20, minConfidence: 75, maxPositions: 5, dailyLossPct: 8, slAtr: 3.5, tpAtr: 6, timeframe: '15m', htfFilter: true, exitOnFlip: true },
   };
-  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced' };
+  const HTF = { '5m': '1h', '15m': '1h', '1h': '4h', '4h': '1d' };
+  const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
+  const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1;
+  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
 
@@ -30,7 +35,7 @@
     privacy: false,                                  // amounts hidden right now (eye button)   // confirmClose: always | loss | off      // dashboard card opacity (0.15–1)
     onboarded: store.get('onboarded') || false,
     conn: store.get('conn') || { mode: 'demo' },  // {mode:'demo'|'mt5', accountId, region, login, server}
-    bot: { ...DEFAULT_BOT, ...(store.get('bot') || {}) },
+    bot: { ...DEFAULT_BOT, botV: store.get('bot') ? 1 : 2, ...(store.get('bot') || {}) },
     newsKey: store.get('newsKey') || '',
     log: store.get('log') || [],
     tab: 'home', broker: null, account: null, positions: [], history: [], analysis: {}, mood: null,
@@ -182,7 +187,7 @@
         <label class="toggle"><input type="checkbox" id="bio" ${bio.ok || bio.simulated ? 'checked' : 'disabled'}><span></span></label></div>
       <button class="btn" id="create" style="margin-top:8px">Create profile</button>
     </div>`;
-    const hint = () => { const p = RISK_PRESETS[risk]; $('#riskhint').textContent = `${p.riskPct}% risk per trade · max ${p.maxPositions} positions · stop at -${p.dailyLossPct}% per day`; };
+    const hint = () => { const p = RISK_PRESETS[risk]; $('#riskhint').textContent = `${p.timeframe} candles · ${p.riskPct}% risk per trade · max ${p.maxPositions} positions · stop at -${p.dailyLossPct}% per day`; };
     hint();
     $$('#risk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#risk button').forEach(x => x.classList.toggle('on', x === b)); hint(); });
     $$('.cpick').forEach(b => b.onclick = () => { color = b.dataset.c; $$('.cpick').forEach(x => x.style.outline = x === b ? '3px solid var(--text)' : ''); });
@@ -193,7 +198,7 @@
       if (pin !== pin2) return toast('PINs do not match');
       if ($('#bio').checked && bio.ok && !(await Security.verify('Confirm fingerprint to enable unlock'))) return toast('Fingerprint not confirmed');
       S.profile = { name, email: $('#email').value.trim(), pinHash: await Security.hashPin(pin), biometric: $('#bio').checked, riskProfile: risk, color, created: Date.now() };
-      Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk });
+      Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk, botV: 2 });
       save(); S.unlocked = true; toast(`Welcome, ${name}!`); render(); boot();
     };
   }
@@ -601,7 +606,7 @@
     paint(body, `<div class="row between"><div><h2>${sym}</h2><div class="sub mono">${a ? px(sym, a.price) : '—'} · ATR ${a ? px(sym, a.atr) : '—'}</div></div>
       ${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '+' : ''}${a.score} · ${a.label}</span>` : ''}</div>
       <div class="chart-box" style="margin:12px 0"><canvas id="symchart" height="230"></canvas></div>
-      ${a ? (() => { const d = Engine.decide(a, S.bot.strategy, S.mood, S.bot); return `<div class="card row between" style="background:var(--card2);margin-bottom:10px"><div><div class="sub">${Engine.REGIME_LABEL[a.regime]} market · ${S.bot.strategy === 'auto' ? 'Auto picks' : 'Strategy'}</div><div class="title">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} <span class="sub">${esc(d.why)}</span></div></div><span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; })() : ''}
+      ${a ? (() => { const d = botDecision(sym)[1]; return `<div class="card row between" style="background:var(--card2);margin-bottom:10px"><div><div class="sub">${Engine.REGIME_LABEL[a.regime]} market · ${S.bot.strategy === 'auto' ? 'Auto picks' : 'Strategy'}</div><div class="title">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} <span class="sub">${esc(d.why)}</span></div></div><span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; })() : ''}
       ${a ? `<div class="grid3" style="margin-bottom:10px"><div class="stat"><div class="lbl">Signal</div><div class="val ${a.signal === 'BUY' ? 'up' : a.signal === 'SELL' ? 'down' : ''}">${a.signal}</div></div>
         <div class="stat"><div class="lbl">Confidence</div><div class="val">${a.confidence}%</div></div><div class="stat"><div class="lbl">RSI</div><div class="val">${fmt(a.rsi, 1)}</div></div></div>
         <div class="card" style="background:var(--card2)">${a.factors.map(f => `<div class="factor"><span class="muted">${f.key}</span><div class="bar"><i style="left:${f.v < 0 ? 50 + f.v / 2 : 50}%;width:${Math.abs(f.v) / 2}%;background:${f.v >= 0 ? 'var(--up)' : 'var(--down)'}"></i><i style="left:50%;width:1px;background:var(--muted)"></i></div><span class="mono right ${cls(f.v)}">${f.v > 0 ? '+' : ''}${f.v}</span></div>`).join('')}</div>` : '<div class="empty">Analysing…</div>'}
@@ -641,18 +646,22 @@
       <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
       ${isLive() ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
       <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
+      ${b.botV !== 2 ? `<div class="notice" id="tuned" style="margin-bottom:12px"><b>Bot improved in v1.8.</b> Replayed over 16 months of real MT5 prices, your current settings lost money (mostly spread on short trades). Apply the tested <b>${RISK_PRESETS[b.profile]?.label || 'Balanced'}</b> profile?
+        <div class="row" style="margin-top:10px;gap:8px"><button class="btn small" id="tuneyes">Apply tested settings</button><button class="btn small ghost" id="tuneno">Keep mine</button></div></div>` : ''}
       <div class="lockbar ${S.settingsUnlocked ? 'open' : ''}" id="lockbar"><div><b id="lockt">${S.settingsUnlocked ? '🔓 Editing settings' : '🔒 Settings locked'}</b><div class="sub" id="locks">${S.settingsUnlocked ? 'Lock again when you are done' : 'Prevents accidental changes while scrolling'}</div></div><button class="btn small ${S.settingsUnlocked ? '' : 'ghost'}" id="lockbtn">${S.settingsUnlocked ? 'Lock' : 'Unlock to edit'}</button></div>
       <div id="botsettings" class="${S.settingsUnlocked ? '' : 'locked'}">
       <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
       <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
       <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${[...new Set([...b.symbols, ...all])].slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
       <h3>Strategy settings</h3><div class="card">
-        <div class="field"><label>Timeframe</label><div class="seg" id="tf">${['5m', '15m', '1h', '4h'].map(t => `<button data-t="${t}" class="${b.timeframe === t ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+        <div class="field"><label>Timeframe</label><div class="seg" id="tf">${['5m', '15m', '1h', '4h'].map(t => `<button data-t="${t}" class="${b.timeframe === t ? 'on' : ''}">${t}</button>`).join('')}</div>
+          <p class="hint" id="tfhint">${tfHint()}</p></div>
         ${slider('threshold', 'Entry sentiment threshold', 15, 80, 1, '±')}
         ${slider('minConfidence', 'Minimum confidence', 20, 90, 1, '', '%')}
         ${slider('slAtr', 'Stop-loss (× ATR)', .5, 5, .1)}
         ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}
-        <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close bot positions on an opposite signal</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
+        <div class="row between" style="margin-bottom:14px"><div><div class="title">Follow the bigger trend</div><div class="sub" id="htfsub">Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down</div></div><label class="toggle"><input type="checkbox" id="htf" ${b.htfFilter ? 'checked' : ''}><span></span></label></div>
+        <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
       </div>
       <h3>Profit & loss targets</h3><div class="card" id="targets">
         <div class="seg" id="tmode" style="margin-bottom:12px"><button data-m="atr" class="${b.targetMode === 'atr' ? 'on' : ''}">By volatility (ATR)</button><button data-m="usd" class="${b.targetMode === 'usd' ? 'on' : ''}">Fixed $ amount</button></div>
@@ -672,6 +681,7 @@
         ${slider('dailyLossPct', 'Daily loss limit (bot pauses)', .5, 20, .5, '-', '%')}
         ${slider('maxLot', 'Max lot per trade', .01, 10, .01)}
         ${slider('intervalSec', 'Scan interval', 5, 300, 5, '', ' s')}
+        <p class="hint" style="margin-top:-4px">How often the bot checks for a newly closed candle. It trades at most once per candle, so a shorter interval does not mean more trades.</p>
       </div>
       </div>
       <h3>Activity log</h3><div class="card log" id="botlog">${logHtml()}</div>
@@ -681,9 +691,12 @@
     $('#bottoggle').onchange = e => toggleBot(e.target.checked);
     $$('#strat button').forEach(x => x.onclick = () => { b.strategy = x.dataset.st; save(); $$('#strat button').forEach(y => y.classList.toggle('on', y === x)); paint($('#radar'), radarHtml(), 'radar'); log(`Strategy set to ${Engine.STRATEGIES[b.strategy].label}`); });
     bindPositions(v);
-    $$('#preset button').forEach(x => x.onclick = () => { Object.assign(S.bot, RISK_PRESETS[x.dataset.k], { profile: x.dataset.k }); save(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
+    $$('#preset button').forEach(x => x.onclick = () => { Object.assign(S.bot, RISK_PRESETS[x.dataset.k], { profile: x.dataset.k, botV: 2 }); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
-    $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); save(); });
+    $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; save(); analyseAll(); });
+    $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
+    const tuned = ok => { if (ok) { const k = RISK_PRESETS[b.profile] ? b.profile : 'balanced'; Object.assign(b, RISK_PRESETS[k], { profile: k }); } b.botV = 2; save(); if (ok) { viewBot(v); toast('Tested settings applied'); log(`Applied tested ${RISK_PRESETS[b.profile].label} settings`); } else $('#tuned')?.remove(); };
+    $('#tuneyes') && ($('#tuneyes').onclick = () => tuned(true)); $('#tuneno') && ($('#tuneno').onclick = () => tuned(false));
     $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); });
     $('#flip').onchange = e => { b.exitOnFlip = e.target.checked; save(); };
     $('#lockbtn').onclick = async () => {
@@ -703,9 +716,15 @@
   }
   const slider = (k, l, min, max, step, pre = '', suf = '') => `<div class="field"><div class="row between"><label style="margin:0 0 4px 4px">${l}</label><b class="mono" id="v_${k}">${pre}${S.bot[k]}${suf}</b></div>
     <input type="range" data-k="${k}" data-pre="${pre}" data-suf="${suf}" min="${min}" max="${max}" step="${step}" value="${S.bot[k]}"></div>`;
+  const tfHint = () => ({
+    '5m': '<span class="down">⚠ High cost.</span> 5-minute trades are small, so the spread eats most of the profit. In testing every 5m setup lost money. 15m or 1h is recommended.',
+    '15m': 'Recommended. Trades last a few hours on average.',
+    '1h': 'Fewer, longer trades with the lowest spread cost. Good for a calm, conservative bot.',
+    '4h': 'Very few trades, held for days. Overnight swap fees apply.',
+  })[S.bot.timeframe] || '';
   const targetHint = () => `Each trade closes at about <b class="up">+$${fmt(S.bot.tpUsd)}</b> or <b class="down">−$${fmt(S.bot.slUsd)}</b>. The bot picks the lot size so the target sits about ${S.bot.tpAtr}× ATR away (set under Strategy), within Max lot. Spread and commission are not included.`;
   function radarHtml() {
-    return watch().map(sym => { const a = S.analysis[sym]; const d = Engine.decide(a, S.bot.strategy, S.mood, S.bot);
+    return watch().map(sym => { const [a, d] = botDecision(sym);
       return `<div class="list-item" data-key="r${sym}"><div class="avatar">${sym.slice(0, 3)}</div><div class="grow"><div class="title">${sym} <span class="sub">${a ? Engine.REGIME_LABEL[a.regime] : '…'}</span></div>
         <div class="sub">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} · ${esc(d.why)}${S.bot.targetMode === 'usd' ? ` · <span class="up">+$${fmt(S.bot.tpUsd)}</span>/<span class="down">−$${fmt(S.bot.slUsd)}</span>` : d.riskMult !== 1 && d.action !== 'HOLD' ? ` · size ×${d.riskMult}` : ''}</div></div>
         <span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; }).join('') || '<div class="empty">Pick symbols below</div>';
@@ -743,6 +762,7 @@
         ${h.length ? '<div class="chart-box" style="height:120px;margin-top:8px"><canvas id="eq" height="120"></canvas></div>' : '<div class="sub" style="margin:10px 0">Equity curve appears after your first closed trade.</div>'}
         <div class="grid3"><div class="stat"><div class="lbl">Trades</div><div class="val">${h.length}</div></div><div class="stat"><div class="lbl">Avg win</div><div class="val mono up">${money(wins.length ? wins.reduce((s, d) => s + d.profit, 0) / wins.length : 0)}</div></div>
         <div class="stat"><div class="lbl">Avg loss</div><div class="val mono down">${money(h.length - wins.length ? h.filter(d => d.profit <= 0).reduce((s, d) => s + d.profit, 0) / (h.length - wins.length) : 0)}</div></div></div></div>
+      ${h.length ? `<h3>Where P/L comes from</h3><div class="card">${exitBreakdown(h)}</div>` : ''}
       <h3>Allocation</h3><div class="card">${Object.keys(exp).length ? `<div class="row">${donut(exp)}<div class="donut-legend grow">${Object.entries(exp).map(([s, vol], k) => `<div><i style="background:${pal(k)}"></i>${s}<span class="grow"></span><b class="mono">${fmt(vol)} lot</b></div>`).join('')}</div></div>` : '<div class="empty">No open exposure</div>'}</div>
       ${posHeader('Open positions · ' + S.positions.length)}<div class="card">${positionsHtml(S.positions)}</div>
       <h3>Closed trades</h3><div class="card">${h.slice(0, 30).map(d => `<div class="list-item" data-key="d${d.id}-${d.time}"><div class="avatar ${d.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
@@ -752,6 +772,13 @@
     bindTop(); bindPositions(v);
     const pts = []; let run = (a.balance ?? 0) - realized; pts.push(run); h.slice().reverse().forEach(d => pts.push(run += d.profit)); pts.push(a.equity ?? run);
     if (!S.privacy) drawLine($('#eq'), pts);
+  }
+  /* P/L grouped by how trades closed: shows at a glance which exit is costing money. */
+  function exitBreakdown(h) {
+    const g = {}; h.forEach(d => { const k = closeWhy(d); (g[k] ||= { n: 0, w: 0, p: 0 }); g[k].n++; g[k].p += d.profit; if (d.profit > 0) g[k].w++; });
+    const rows = Object.entries(g).sort((x, y) => x[1].p - y[1].p), max = Math.max(...rows.map(([, v]) => Math.abs(v.p)), 1e-9);
+    return rows.map(([k, v]) => `<div class="exitrow" data-key="x${esc(k)}"><div class="row between"><span>${esc(k)} <span class="sub">${v.n} trade${v.n === 1 ? '' : 's'} · ${Math.round(v.w / v.n * 100)}% won</span></span><b class="mono ${cls(v.p)}">${signed(v.p)}</b></div>
+      <div class="bar"><i class="${v.p >= 0 ? 'upbg' : 'downbg'}" style="width:${Math.max(3, Math.abs(v.p) / max * 100).toFixed(0)}%"></i></div></div>`).join('');
   }
   /* Who/what closed a trade: paper keeps an explicit reason; MT5 deals carry it in the close comment. */
   function closeWhy(d) {
@@ -895,7 +922,7 @@
     }
     let risk = p.riskProfile;
     $$('#prisk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#prisk button').forEach(x => x.classList.toggle('on', x === b)); });
-    $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };
+    $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk, botV: 2 }); save(); toast('Profile saved'); viewProfile(v); };
     $('#pbio').onchange = async e => { if (e.target.checked && !(await Security.verify('Enable fingerprint unlock'))) { e.target.checked = false; return; } p.biometric = e.target.checked; save(); toast(p.biometric ? 'Fingerprint enabled' : 'Fingerprint disabled'); };
     $('#ppin').onclick = changePin;
     $('#whatsnew').onclick = () => openChangelog();
@@ -1187,10 +1214,38 @@
         if (S.conn.mode !== 'demo' && !(s in (S.digitsOf ||= {}))) { try { S.digitsOf[s] = (await S.broker.getSpec(s)).digits; } catch { } }
         const news = await Brokers.News.forSymbol(s, S.newsKey);
         S.analysis[s] = Engine.analyse(c, { threshold: S.bot.threshold, news });
+        // The bot decides on CLOSED candles only: the last candle is still forming and its
+        // score swings tick by tick, which made the bot enter and exit on noise.
+        const done = c.slice(0, -1);
+        (S.botAnalysis ||= {})[s] = Engine.analyse(done, { threshold: S.bot.threshold, news });
+        (S.barKey ||= {})[s] = done.at(-1)?.time;
+        if (S.bot.htfFilter && watch().includes(s)) await loadHtf(s);
       } catch (e) { /* symbol unavailable */ }
     }));
     S.mood = Engine.marketMood(watch().map(s => S.analysis[s]));
     refreshLive();
+  }
+
+  /* Higher-timeframe trend (EMA20 vs EMA50 on closed candles), refreshed every 5 minutes. */
+  async function loadHtf(sym) {
+    const tf = HTF[S.bot.timeframe] || '1h', key = sym + tf, c = (S.htf ||= {})[key];
+    if (c && Date.now() - c.t < 3e5) return;
+    try {
+      const k = (await S.broker.getCandles(sym, tf, 120)).slice(0, -1), a = Engine.analyse(k, {});
+      S.htf[key] = { t: Date.now(), up: a ? a.ema20 > a.ema50 : null };
+    } catch { S.htf[key] = { t: Date.now(), up: null }; }
+  }
+  /* null = no data (don't block), true/false = trade allowed in that direction. */
+  function htfOk(sym, side) {
+    if (!S.bot.htfFilter) return true;
+    const h = S.htf?.[sym + (HTF[S.bot.timeframe] || '1h')]; if (!h || h.up == null) return null;
+    return side === 'BUY' ? h.up : !h.up;
+  }
+  /* Bot's view of a symbol: closed-candle analysis + decision + higher-timeframe gate. */
+  function botDecision(sym) {
+    const a = S.botAnalysis?.[sym] || S.analysis[sym], d = Engine.decide(a, S.bot.strategy, S.mood, S.bot);
+    if (d.action !== 'HOLD' && htfOk(sym, d.action) === false) { d.why += ` · ${HTF[S.bot.timeframe]} trend against`; d.blocked = d.action; d.action = 'HOLD'; }
+    return [a, d];
   }
 
   function lotFor(sym, a, spec, slMult = S.bot.slAtr, riskMult = 1) {
@@ -1243,26 +1298,37 @@
       const lossLimit = (S.dayStart?.equity || 0) * S.bot.dailyLossPct / 100;
       if (todayPnl() <= -lossLimit) { S.bot.enabled = false; S.bot.pausedReason = 'Daily loss limit hit'; save(); log(`Daily loss limit (-${S.bot.dailyLossPct}%) reached — bot paused`, 'down'); notify('Tradebot paused', 'Daily loss limit reached.'); refreshLive(); return; }
       const mine = S.positions.filter(p => isBot(p));
-      // Exits: trend/breakout/sentiment trades close when sentiment turns against them;
-      // reversion trades take profit once price returns to the middle Bollinger band.
+      // Work only once per newly closed candle per symbol (the scan interval just checks for one).
+      const seen = (S.botSeen ||= {}), fresh = {};
+      watch().concat(mine.map(p => p.symbol)).forEach(s => { const k = S.barKey?.[s]; if (k != null && seen[s] !== k) { fresh[s] = true; seen[s] = k; } });
+      const bars = (S.posBars ||= store.get('posBars') || {});
+      mine.forEach(p => { if (!(p.id in bars)) bars[p.id] = Date.now() - p.time > 6e5 ? FLIP_MIN_BARS : 0; else if (fresh[p.symbol]) bars[p.id]++; });
+      Object.keys(bars).forEach(id => { if (!mine.some(p => String(p.id) === id)) delete bars[id]; });
+      store.set('posBars', bars);
+      // Exits: trend/breakout/sentiment trades close when sentiment turns STRONGLY against them
+      // (1.5× the entry threshold, after 4+ closed candles); reversion trades exit at the middle band.
       for (const p of mine) {
-        const a = S.analysis[p.symbol]; if (!a) continue;
-        const buy = p.type === 'POSITION_TYPE_BUY', st = stratOf(p);
+        const a = S.botAnalysis?.[p.symbol]; if (!a || !fresh[p.symbol]) continue;
+        const buy = p.type === 'POSITION_TYPE_BUY', st = stratOf(p), lim = S.bot.threshold * FLIP_MULT;
         let why = '';
         if (st === 'reversion') { if (buy ? a.bb.pctB >= .5 : a.bb.pctB <= .5) why = 'Back to mean'; }
-        else if (S.bot.exitOnFlip && (buy ? a.score <= -S.bot.threshold * .6 : a.score >= S.bot.threshold * .6)) why = `Sentiment flipped (${a.score})`;
+        else if (S.bot.exitOnFlip && bars[p.id] >= FLIP_MIN_BARS && (buy ? a.score <= -lim : a.score >= lim)) why = `Sentiment flipped (${a.score})`;
         if (why) { try { await S.broker.closePosition(p.id, st === 'reversion' ? 'Bot: back to mean' : 'Bot: sentiment flip'); log(`${why} on ${p.symbol}: closed ${signed(p.profit)}`, cls(p.profit)); } catch (e) { log(`Close ${p.symbol} failed: ${e.message}`, 'down'); } }
       }
       // Entries
       await poll();
       let open = S.positions.filter(p => isBot(p)).length;
-      const cands = watch().map(s => [s, S.analysis[s], Engine.decide(S.analysis[s], S.bot.strategy, S.mood, S.bot)]).filter(([, , d]) => d.action !== 'HOLD')
+      const cands = watch().filter(s => fresh[s]).map(s => [s, ...botDecision(s)]).filter(([, , d]) => d.action !== 'HOLD')
         .sort((x, y) => Math.abs(y[1].score) * y[2].riskMult - Math.abs(x[1].score) * x[2].riskMult);
       for (const [s, a, d] of cands) {
         if (open >= S.bot.maxPositions) break;
         if (S.positions.some(p => p.symbol === s)) continue;
         const spec = await S.broker.getSpec(s);
-        const vol = S.bot.targetMode === 'usd' ? usdPlan(s, a, spec, d.tpAtr).lot : lotFor(s, a, spec, d.slAtr, d.riskMult);
+        const plan = S.bot.targetMode === 'usd' ? usdPlan(s, a, spec, d.tpAtr) : null;
+        const vol = plan ? plan.lot : lotFor(s, a, spec, d.slAtr, d.riskMult);
+        // Spread guard: skip when the spread is more than 10% of the stop distance (a cost the trade rarely earns back)
+        try { const q = await S.broker.getPrice(s), sp = q.ask - q.bid, slD = plan ? plan.slDist : a.atr * d.slAtr;
+          if (sp > slD * SPREAD_MAX) { if ((S._spreadLog ||= {})[s] !== S.barKey[s]) { S._spreadLog[s] = S.barKey[s]; log(`Skipped ${s}: spread is ${Math.round(sp / slD * 100)}% of the stop distance`, ''); } continue; } } catch { }
         const st = Engine.STRATEGIES[d.strategy];
         try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':' }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); }
         catch (e) { log(`Order ${s} failed: ${e.message}`, 'down'); }

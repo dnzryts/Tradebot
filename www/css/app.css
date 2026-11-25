@@ -413,3 +413,11 @@ html.private #eq { display: none; }
 .changelog p { margin: 6px 0; color: var(--muted); }
 .toast u { color: var(--accent); }
 .screen.enter-none { animation: none !important; }
+
+/* Portfolio: P/L by exit reason */
+.exitrow { padding: 8px 0; }
+.exitrow + .exitrow { border-top: 1px solid var(--line, rgba(255,255,255,.06)); }
+.exitrow .bar { height: 6px; border-radius: 3px; background: var(--card2); margin-top: 6px; overflow: hidden; }
+.exitrow .bar i { display: block; height: 100%; border-radius: 3px; }
+.exitrow .bar i.upbg { background: var(--up); }
+.exitrow .bar i.downbg { background: var(--down); }
