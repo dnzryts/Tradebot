@@ -271,8 +271,11 @@
       cur.style.transform = `translate3d(${x}px,0,0)`;
       if (peek) peek.style.transform = `translate3d(${peekDir * W() + x}px,0,0)`;
     }
-    function animate(x, ms, done) {
-      const tr = `transform ${ms}ms cubic-bezier(.25,.8,.3,1)`;
+    // Easing curves: STANDARD accelerates and decelerates gently (taps); GLIDE starts at ~1.8× average speed
+    // so a released swipe continues at the finger's speed and slows down evenly, with no hard stop.
+    const STANDARD = 'cubic-bezier(.4,0,.2,1)', GLIDE = 'cubic-bezier(.25,.46,.45,.94)';
+    function animate(x, ms, done, ease = GLIDE) {
+      const tr = `transform ${ms}ms ${ease}`;
       cur.style.transition = tr; if (peek) peek.style.transition = tr;
       place(x); setTimeout(done, ms);
     }
@@ -311,7 +314,8 @@
       const w = W(), commit = peek && (Math.abs(dx) > w * .25 || (Math.abs(vx) > .25 && Math.sign(vx) === Math.sign(dx)));
       if (commit) {
         const target = neighbour(peekDir), to = -peekDir * w, remain = Math.abs(to - dx);
-        const ms = Math.round(Math.max(80, Math.min(180, remain / Math.max(Math.abs(vx), 2.2))));
+        // duration chosen so the glide starts at the finger's speed (initial slope of GLIDE ≈ 1.84)
+        const ms = Math.round(Math.max(200, Math.min(380, 1.84 * remain / Math.max(Math.abs(vx), .5))));
         settling = true;
         animate(to, ms, () => {
           goTab(target, false, peekDir, true);                          // same content the peek showed, so it swaps invisibly
@@ -319,7 +323,7 @@
         });
       } else {
         settling = true;
-        animate(0, 160, () => { cur.style.transition = ''; cur.style.transform = ''; cur.style.willChange = ''; dropPeek(); S._dragging = false; settling = false; });
+        animate(0, 260, () => { cur.style.transition = ''; cur.style.transform = ''; cur.style.willChange = ''; dropPeek(); S._dragging = false; settling = false; });
       }
     };
     document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
@@ -334,7 +338,7 @@
       cur.style.transition = 'none'; cur.style.willChange = 'transform';
       makePeek(dir, tab);
       requestAnimationFrame(() => requestAnimationFrame(() =>
-        animate(-dir * W(), 240, () => { goTab(tab, false, dir, true); dropPeek(); S._dragging = false; settling = false; })));
+        animate(-dir * W(), 320, () => { goTab(tab, false, dir, true); dropPeek(); S._dragging = false; settling = false; }, STANDARD)));
       return true;
     };
   })();

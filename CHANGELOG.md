@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5] - 2026-11-25
+### Changed
+- **Smoother page transitions.** The old curve covered ~80% of the distance in the first half and then braked hard ("hitting a wall").
+  - Bottom-bar taps and Back use a standard ease-in-out over 0.32 s.
+  - A released swipe glides on from the finger's speed and slows down evenly (0.2–0.38 s).
+  - Spring-back settles more softly.
+
 ## [1.7.4] - 2026-11-25
 ### Changed
 - **Bottom-bar taps and Back now use the same side-by-side slide as swiping.** The new page slides in beside the current one, in the right direction even when jumping across tabs (e.g. Home → Profile), in about 0.25 s with no fade. The tapped icon highlights immediately.
