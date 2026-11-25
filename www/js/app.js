@@ -23,8 +23,9 @@
 
   const S = {
     profile: store.get('profile'),               // {name, email, pinHash, biometric, riskProfile, color, created}
-    theme: store.get('themeV2') ? (store.get('theme') || 'system') : 'system',   // 1.4: follow the phone's light/dark setting by default
-    systemDark: store.get('systemDark') || 'midnight',
+    theme: (t => ['system', 'light'].includes(t) ? t : t ? 'midnight' : 'system')(store.get('themeV2') ? store.get('theme') : 'system'), // dark styles folded into Midnight
+    systemDark: 'midnight',
+    heroAlpha: store.get('heroAlpha') ?? 0.65,      // dashboard card opacity (0.15–1)
     onboarded: store.get('onboarded') || false,
     conn: store.get('conn') || { mode: 'demo' },  // {mode:'demo'|'mt5', accountId, region, login, server}
     bot: { ...DEFAULT_BOT, ...(store.get('bot') || {}) },
@@ -45,7 +46,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const cls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
   const sentCls = s => s >= 25 ? 'up' : s <= -25 ? 'down' : 'neutral';
-  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('systemDark', S.systemDark); };
+  const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); };
   let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
   function log(msg, kind = '') { S.log.unshift({ t: Date.now(), msg, kind }); S.log = S.log.slice(0, 200); store.set('log', S.log); const el = $('#botlog'); if (el) el.innerHTML = logHtml(); }
   /* Theme: 'system' follows the phone's light/dark mode (dark uses the chosen dark theme). */
@@ -61,6 +62,11 @@
     document.querySelector('meta[name=theme-color]').content = bg;
     // Native status/navigation bar area: background colour + light or dark icons
     try { window.Capacitor?.Plugins?.ThemeBars?.set({ color: bg, light: t === 'light' }); } catch { }
+  }
+  /* Dashboard equity card opacity: CSS variable + readable text colours when it gets light. */
+  function applyHero() {
+    document.documentElement.style.setProperty('--hero-a', String(S.heroAlpha));
+    $$('.card.hero').forEach(el => el.classList.toggle('soft', S.heroAlpha < .7));
   }
   function setTheme(t) { S.theme = t; store.set('themeV2', true); save(); applyTheme(); }
   darkMQ?.addEventListener?.('change', () => { if (S.theme === 'system') applyTheme(); });
@@ -238,7 +244,7 @@
       if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
       const t = e.touches[0];
       if (t.clientX < 24 || t.clientX > innerWidth - 24) return;            // leave screen edges to Android's back gesture
-      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad')) return; // these scroll/drag themselves
+      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad, .trades-scroll')) return; // these scroll/drag themselves
       x0 = t.clientX; y0 = t.clientY; t0 = performance.now();
     }, { passive: true });
     document.addEventListener('touchend', e => {
@@ -301,13 +307,14 @@
     const focus = S.analysis[S.focus];
     const mood = S.mood || { score: 0, label: 'Analysing…', bulls: 0, bears: 0 };
     paint(v, `<div class="screen">${topbar('Dashboard')}
-      <div class="card hero">
-        <div class="row between"><span class="muted">Equity · ${esc(a.name || '—')}</span><span class="chip" style="background:rgba(255,255,255,.2)">${isLive() ? 'LIVE MT5' : 'PAPER'}</span></div>
+      <div class="card hero ${S.heroAlpha < .7 ? 'soft' : ''}">
+        <div class="row between"><span class="muted">Equity · ${esc(a.name || '—')}</span><span class="chip">${isLive() ? 'LIVE MT5' : 'PAPER'}</span></div>
         <div class="big mono" style="margin:6px 0 12px">${money(a.equity ?? 0)}</div>
         <div class="grid3"><div class="stat"><div class="lbl">Balance</div><div class="val mono">${money(a.balance ?? 0)}</div></div>
           <div class="stat"><div class="lbl">Floating</div><div class="val mono">${signed(pl)}</div></div>
           <div class="stat"><div class="lbl">Free margin</div><div class="val mono">${money(a.freeMargin ?? 0)}</div></div></div>
       </div>
+      ${liveTradesHtml()}
       <div class="card"><div class="row between"><h2 style="font-size:17px">Market sentiment</h2><span class="chip ${sentCls(mood.score)}">${mood.label}</span></div>
         <div class="gauge-wrap">${gauge(mood.score)}<div class="grow">
           <div class="sub">Bullish symbols</div><div class="title up" style="font-size:20px">${mood.bulls}</div>
@@ -317,7 +324,6 @@
         ${focus ? `<span class="chip ${sentCls(focus.score)}">${focus.score > 0 ? '+' : ''}${focus.score} ${focus.label}</span>` : ''}</div>
         <div class="tabs-mini" id="focus">${watch().map(s => `<button class="${s === S.focus ? 'on' : ''}" data-s="${s}">${s}</button>`).join('')}</div>
         <div class="chart-box" style="margin-top:10px"><canvas id="chart" height="230"></canvas></div></div>
-      ${posHeader('Open positions')}<div class="card">${positionsHtml(S.positions.slice(0, 4))}</div>
       <h3>Bot activity</h3><div class="card log">${S.log.slice(0, 5).map(logRow).join('') || '<div class="empty">No activity yet</div>'}</div>
     </div>`, 'home');
     bindTop();
@@ -326,6 +332,33 @@
     drawChart($('#chart'), S.focus);
   }
   const watch = () => S.bot.symbols.length ? S.bot.symbols : ['EURUSD'];
+  /* ---------- Live trades (dashboard) ---------- */
+  const age = t => { const m = Math.max(0, Math.floor((Date.now() - t) / 60000)); return m < 1 ? 'just now' : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h`; };
+  const clamp01 = x => Math.max(0, Math.min(1, x));
+  function tradeCard(p) {
+    const buy = p.type === 'POSITION_TYPE_BUY', bot = isBot(p), st = bot ? Engine.STRATEGIES[stratOf(p)] : null;
+    let bar = '';
+    if (p.stopLoss && p.takeProfit) {
+      const span = p.takeProfit - p.stopLoss, cur = clamp01((p.currentPrice - p.stopLoss) / span), ent = clamp01((p.openPrice - p.stopLoss) / span);
+      bar = `<div class="tbar"><i class="tfill ${cur >= ent ? 'up' : 'down'}" style="left:${Math.min(cur, ent) * 100}%;width:${Math.abs(cur - ent) * 100}%"></i><i class="tentry" style="left:${ent * 100}%"></i><i class="tnow" style="left:${cur * 100}%"></i></div>
+        <div class="row between tlbl"><span class="down">SL ${px(p.symbol, p.stopLoss)}</span><span class="up">TP ${px(p.symbol, p.takeProfit)}</span></div>`;
+    } else bar = `<div class="tlbl sub" style="margin-top:10px">No SL/TP set</div>`;
+    return `<div class="tcard ${cls(p.profit)}" data-key="t${p.id}">
+      <div class="row between"><div class="row" style="gap:8px"><span class="side ${buy ? 'up' : 'down'}">${buy ? 'BUY' : 'SELL'}</span><b>${p.symbol}</b></div><span class="sub">${bot ? st.icon + ' ' + st.label : '✋ Manual'}</span></div>
+      <div class="tpl mono ${cls(p.profit)}">${signed(p.profit)}</div>
+      <div class="sub mono">${fmt(p.volume)} lot · ${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div>
+      ${bar}
+      <div class="row between" style="margin-top:10px"><span class="sub">⏱ ${age(p.time)}</span><button class="tclose" data-close="${p.id}">Close</button></div>
+    </div>`;
+  }
+  function liveTradesHtml() {
+    const ps = S.positions, tot = ps.reduce((x, p) => x + p.profit, 0), botN = ps.filter(isBot).length;
+    return `${posHeader('Live trades' + (ps.length ? ' · ' + ps.length : ''))}
+      ${ps.length ? `<div class="card tsum"><div><div class="sub">Floating P/L</div><div class="mono ${cls(tot)}" style="font-size:22px;font-weight:800">${signed(tot)}</div></div>
+        <div class="right"><div class="sub">${ps.filter(p => p.type === 'POSITION_TYPE_BUY').length} buy · ${ps.filter(p => p.type !== 'POSITION_TYPE_BUY').length} sell</div><div class="sub">🤖 ${botN} bot · ✋ ${ps.length - botN} manual</div></div></div>
+        <div class="trades-scroll" data-keep-scroll>${ps.map(tradeCard).join('')}</div>`
+      : `<div class="card empty" style="padding:18px">No open trades. Trades from the bot and your manual orders appear here live.</div>`}`;
+  }
   const isLive = () => S.conn.mode !== 'demo';
   const isBot = p => /^TB /.test(p.comment || '');
   const STRAT_CODE = { trend: 'T', breakout: 'B', reversion: 'R', sentiment: 'S' };
@@ -568,8 +601,9 @@
       <h3>Appearance</h3><div class="card">
         <div class="seg" id="tmode3"><button data-a="system" class="${S.theme === 'system' ? 'on' : ''}">System</button><button data-a="light" class="${S.theme === 'light' ? 'on' : ''}">Light</button><button data-a="dark" class="${S.theme !== 'system' && S.theme !== 'light' ? 'on' : ''}">Dark</button></div>
         <p class="hint" id="thint">${S.theme === 'system' ? `Following your phone: currently <b>${systemIsDark() ? 'dark' : 'light'}</b>.` : S.theme === 'light' ? 'Always light.' : 'Always dark.'}</p>
-        <div id="darkpick" class="${S.theme === 'light' ? 'hidden' : ''}"><div class="sub" style="margin:10px 2px 8px">Dark style</div>
-        <div class="swatches three">${['midnight', 'aurora', 'gold'].map(k => { const c = THEMES[k]; const on = S.theme === 'system' ? S.systemDark === k : S.theme === k; return `<button class="swatch ${on ? 'on' : ''}" data-t="${k}"><i style="background:linear-gradient(135deg,${c[0]} 0 40%,${c[1]} 40% 70%,${c[2]} 70%)"></i>${k[0].toUpperCase() + k.slice(1)}</button>`; }).join('')}</div></div>
+        <div class="field" style="margin:14px 0 0"><div class="row between"><label style="margin:0 0 4px 4px">Dashboard card opacity</label><b class="mono" id="heroav">${Math.round(S.heroAlpha * 100)}%</b></div>
+          <input type="range" id="heroa" min="15" max="100" step="5" value="${Math.round(S.heroAlpha * 100)}">
+          <div class="hero-preview card hero ${S.heroAlpha < .7 ? 'soft' : ''}" id="heropv"><div class="row between"><span class="muted">Equity preview</span><span class="chip">PAPER</span></div><div class="mono" style="font-size:22px;font-weight:800;margin-top:4px">$10,000.00</div></div></div>
       </div>
       <h3>Edit profile</h3><div class="card">
         <div class="field"><label>Display name</label><input class="input" id="pname" value="${esc(p.name)}" maxlength="24"></div>
@@ -588,8 +622,8 @@
     bindTop();
     $('#conn').onclick = openConnect;
     const themeUi = () => viewProfile(v);
-    $$('#tmode3 button').forEach(b => b.onclick = () => { const a = b.dataset.a; setTheme(a === 'dark' ? S.systemDark : a); themeUi(); });
-    $$('#darkpick .swatch').forEach(b => b.onclick = () => { S.systemDark = b.dataset.t; if (S.theme !== 'system') S.theme = b.dataset.t; setTheme(S.theme); themeUi(); });
+    $$('#tmode3 button').forEach(b => b.onclick = () => { const a = b.dataset.a; setTheme(a === 'dark' ? 'midnight' : a); themeUi(); });
+    const ha = $('#heroa'); if (ha) ha.oninput = () => { S.heroAlpha = +ha.value / 100; $('#heroav').textContent = ha.value + '%'; applyHero(); save(); };
     let risk = p.riskProfile;
     $$('#prisk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#prisk button').forEach(x => x.classList.toggle('on', x === b)); });
     $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };
@@ -950,7 +984,7 @@
     else if (S.profile && S.unlocked && Date.now() - hiddenAt > 60000 && hiddenAt) { S.unlocked = false; render(); }
   });
 
-  applyTheme();
+  applyTheme(); applyHero();
   render();
   window.Tradebot = S; // debugging
 })();

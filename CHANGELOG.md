@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0] - 2026-11-25
+### Added
+- **Live trades on the Dashboard**, right under the equity card:
+  - Floating P/L summary with buy/sell and bot/manual counts.
+  - A swipeable card for each open trade: side, symbol, strategy (or Manual), live P/L, lot, entry → current price, time open, and a one-tap Close.
+  - A progress bar showing where the price sits between stop-loss and take-profit, with the entry marked.
+- **Dashboard card opacity** slider (15–100%) in Profile → Appearance, with a live preview. Below 70% the card switches to dark text so it stays readable.
+
+### Changed
+- The equity card is lighter by default (65% opacity, soft gradient over the card colour).
+- Appearance is simplified to **System / Light / Dark**. The Dark style picker is removed and dark mode always uses Midnight; previously chosen Aurora or Gold map to Midnight.
+- Value changes show a soft glow on the digits instead of a coloured block.
+
+### Fixed
+- In the light theme, the hidden notification's shadow showed as a grey smudge at the top of the screen.
+
 ## [1.4.1] - 2026-11-25
 ### Fixed
 - **Paper trading: wrong closed-trade values after reopening the app.** Each new session re-seeded the simulated market from its original base prices, so open positions saw a sudden price jump and closed at their SL/TP with distorted P/L. The simulated market (300 candles per symbol plus trend regime) is now saved on every new candle and when the app goes to the background, then restored on launch, so prices continue exactly where they left off.

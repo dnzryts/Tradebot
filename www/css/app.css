@@ -278,3 +278,53 @@ html, body { overflow-x: hidden; }
 .hint b.up { color: var(--up); } .hint b.down { color: var(--down); }
 .swatches.three { grid-template-columns: repeat(3, 1fr); }
 #tmode3 { margin-bottom: 4px; }
+
+/* ===== Dashboard equity card: lighter, adjustable opacity (--hero-a set from Profile > Appearance) ===== */
+:root { --hero-a: .65; }
+.card.hero {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) calc(var(--hero-a) * 100%), transparent) 0%,
+    color-mix(in srgb, var(--accent2) calc(var(--hero-a) * 100%), transparent) 100%), var(--card);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--accent) calc(var(--hero-a) * 30%), transparent);
+}
+.card.hero::after { background: rgba(255,255,255,.10); }
+.card.hero .chip { background: rgba(255,255,255,.22); color: inherit; }
+/* Light card → dark, readable text */
+.card.hero.soft { color: var(--text); }
+.card.hero.soft .muted, .card.hero.soft .stat .lbl { color: var(--muted); }
+.card.hero.soft .stat { background: color-mix(in srgb, var(--card) 70%, transparent); }
+.card.hero.soft .chip { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.hero-preview { margin: 12px 0 0; padding: 14px 16px; }
+
+/* ===== Live trades ===== */
+.tsum { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
+.trades-scroll { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -18px 12px; padding: 2px 18px 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.trades-scroll::-webkit-scrollbar { display: none; }
+.tcard { flex: 0 0 82%; max-width: 320px; scroll-snap-align: start; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 14px 15px; position: relative; overflow: hidden; }
+.tcard:only-child { flex-basis: 100%; max-width: none; }
+.tcard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--muted); }
+.tcard.up::before { background: var(--up); } .tcard.down::before { background: var(--down); }
+.side { font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 3px 8px; border-radius: 8px; }
+.side.up { background: color-mix(in srgb, var(--up) 15%, transparent); color: var(--up); }
+.side.down { background: color-mix(in srgb, var(--down) 15%, transparent); color: var(--down); }
+.tpl { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 8px 0 2px; }
+.tbar { position: relative; height: 8px; border-radius: 8px; margin-top: 14px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--down) 22%, transparent), color-mix(in srgb, var(--card2) 80%, transparent) 50%, color-mix(in srgb, var(--up) 22%, transparent)); }
+.tbar i { position: absolute; top: 0; bottom: 0; }
+.tfill { border-radius: 8px; opacity: .75; transition: left .5s, width .5s; }
+.tfill.up { background: var(--up); } .tfill.down { background: var(--down); }
+.tentry { width: 2px; margin-left: -1px; background: var(--text); opacity: .55; top: -3px !important; bottom: -3px !important; border-radius: 2px; }
+.tnow { width: 14px; height: 14px; margin: -3px 0 0 -7px; border-radius: 50%; background: var(--card); border: 3px solid var(--accent); box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: left .5s; }
+.tlbl { font-size: 11px; font-weight: 700; margin-top: 6px; }
+.tclose { font-size: 13px; font-weight: 700; color: var(--down); padding: 6px 12px; border-radius: 99px; background: color-mix(in srgb, var(--down) 12%, transparent); }
+
+/* ===== Toast: no shadow leaking from its hidden position ===== */
+.toast { opacity: 0; visibility: hidden; transition: transform .35s cubic-bezier(.2,.8,.2,1), opacity .25s, visibility .35s; }
+.toast.show { opacity: 1; visibility: visible; }
+
+/* ===== Value change: soft glow on the digits instead of a background block ===== */
+.flash-up { animation: glowUp .9s ease; background: none !important; }
+.flash-down { animation: glowDown .9s ease; background: none !important; }
+@keyframes glowUp { 0% { text-shadow: 0 0 12px color-mix(in srgb, var(--up) 85%, transparent); } 100% { text-shadow: none; } }
+@keyframes glowDown { 0% { text-shadow: 0 0 12px color-mix(in srgb, var(--down) 85%, transparent); } 100% { text-shadow: none; } }

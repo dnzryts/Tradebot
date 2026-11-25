@@ -35,7 +35,7 @@
 | 🤖 **Auto-trading** | Opens trades on strong, high-confidence signals with ATR-based stop-loss and take-profit, risk-based position sizing, a max-positions cap, exit on sentiment flip, and a **daily loss limit kill-switch** |
 | 💼 **Portfolio** | Equity, balance, floating P/L, open positions (one-tap close), allocation donut, equity curve, win rate, average win and loss, closed-trade history |
 | 👤 **Profile** | Name, avatar colour, investor risk profile (Conservative, Balanced or Aggressive), PIN change, biometric toggle, data wipe |
-| 🎨 **Themes & rich UI** | Follows the phone's light/dark mode (System), or force Light/Dark; Midnight, Aurora and Gold dark styles; candlestick charts with EMA overlays; animated gauges; glass navigation; haptic-style micro-animations |
+| 🎨 **Themes & rich UI** | Follows the phone's light/dark mode (System), or force Light/Dark; adjustable dashboard card opacity; live trade cards with SL→TP progress; candlestick charts with EMA overlays; animated gauges; glass navigation; haptic-style micro-animations |
 | 🧪 **Paper mode** | A built-in simulated market with $10k virtual cash, so you can try everything with no account and no risk |
 | 🔔 **Notifications** | Local notifications when the bot trades or pauses |
 
