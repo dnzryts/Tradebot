@@ -60,6 +60,12 @@ npm run serve   # http://localhost:8080
 
 Everything works in Paper mode. Fingerprint is simulated, and secrets go to `localStorage` (preview only). MetaApi calls from a desktop browser can be blocked by CORS. In the APK they go through the native `CapacitorHttp` layer, which isn't subject to CORS.
 
+## Version & changelog in the app
+
+`scripts/gen-version.mjs` runs before every sync and build. It writes `www/js/version.js` with the version (from `package.json`), the build number (CI run number), the commit, the build date and the full `CHANGELOG.md`. These appear under **Profile → About** and **What's new**.
+
+For each release: bump `version` in `package.json` and add a section at the top of `CHANGELOG.md`.
+
 ## What `scripts/patch-android.mjs` does
 
 - Adds `INTERNET`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, `POST_NOTIFICATIONS` and `WAKE_LOCK` permissions

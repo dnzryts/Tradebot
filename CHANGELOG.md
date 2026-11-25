@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.7.2] - 2026-11-25
+### Added
+- **About section** at the bottom of Profile:
+  - The installed version and build number (read from Android itself), plus commit and build date.
+  - Connection type, and the bridge version when using Own VPS.
+- **What's new**: the full changelog inside the app. After an update, a one-time "Updated to vX" note links to it.
+- The changelog is bundled into each build automatically (`scripts/gen-version.mjs` writes `www/js/version.js` from `package.json` and `CHANGELOG.md`).
+
+### Fixed
+- The Profile footer showed a hard-coded "v1.0".
+
 ## [1.7.1] - 2026-11-25
 ### Changed
 - **Native-style page swiping with no delay.**

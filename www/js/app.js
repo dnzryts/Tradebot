@@ -55,7 +55,7 @@
   const cls = v => S.privacy ? '' : v > 0 ? 'up' : v < 0 ? 'down' : '';   // no win/loss colours while amounts are hidden
   const sentCls = s => s >= 25 ? 'up' : s <= -25 ? 'down' : 'neutral';
   const save = () => { store.set('bot', S.bot); store.set('conn', S.conn); store.set('profile', S.profile); store.set('theme', S.theme); store.set('heroAlpha', S.heroAlpha); store.set('prefs', S.prefs); };
-  let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
+  let toastT; function toast(msg) { const t = $('#toast'); t.onclick = null; t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
   function log(msg, kind = '') { S.log.unshift({ t: Date.now(), msg, kind }); S.log = S.log.slice(0, 200); store.set('log', S.log); const el = $('#botlog'); if (el) el.innerHTML = logHtml(); }
   /* Theme: 'system' follows the phone's light/dark mode (dark uses the chosen dark theme). */
   const darkMQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
@@ -364,6 +364,52 @@
   };
   const profileSub = () => `${maskEmail(S.profile.email) || 'No email'} · since ${new Date(S.profile.created).toLocaleDateString()}`;
   const acctTitle = () => isLive() ? `MT5 · ${maskId(S.conn.login || S.conn.accountId?.slice(0, 8), 2)}` : 'Paper trading';
+  /* ---------- About / version / changelog ---------- */
+  const BUILD = window.TB_BUILD || { version: 'dev', build: null, commit: '', date: '', changelog: '' };
+  async function loadAppInfo() {   // the installed version as Android reports it (falls back to the bundled build info)
+    if (S.appInfo) return S.appInfo;
+    try { const i = await window.Capacitor?.Plugins?.App?.getInfo?.(); if (i?.version) return (S.appInfo = { version: i.version, build: i.build }); } catch { }
+    return (S.appInfo = { version: BUILD.version, build: BUILD.build });
+  }
+  function aboutHtml() {
+    const v = S.appInfo || { version: BUILD.version, build: BUILD.build };
+    const conn = S.conn.mode === 'bridge' ? `Own VPS bridge${S.bridgeVersion ? ' v' + S.bridgeVersion : ''}` : S.conn.mode === 'mt5' ? 'MetaApi' : 'Paper trading';
+    const built = BUILD.date ? new Date(BUILD.date).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+    return `<div class="row between"><div class="row">${logo}<div><div class="title">Tradebot</div><div class="sub">Version <b class="mono">${esc(v.version)}</b>${v.build ? ` · build ${esc(String(v.build))}` : ''}</div></div></div>
+        <button class="btn small" id="whatsnew">What's new</button></div>
+      <div class="kv"><span>Built</span><b>${esc(built)}</b></div>
+      <div class="kv"><span>Commit</span><b class="mono">${esc(BUILD.commit || '—')}</b></div>
+      <div class="kv"><span>Connection</span><b>${esc(conn)}</b></div>`;
+  }
+  /* Minimal Markdown → HTML for CHANGELOG.md (headings, nested bullets, bold, code). */
+  function mdToHtml(md) {
+    const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*(.+?)\*/g, '<i>$1</i>');
+    let html = '', depth = 0;
+    const closeTo = d => { while (depth > d) { html += '</ul>'; depth--; } };
+    md.split('\n').forEach(line => {
+      const li = line.match(/^(\s*)- (.*)$/);
+      if (li) { const d = Math.floor(li[1].length / 2) + 1; while (depth < d) { html += '<ul>'; depth++; } closeTo(d); html += `<li>${inline(li[2])}</li>`; return; }
+      closeTo(0);
+      if (/^# /.test(line)) return;                                            // document title
+      const h2 = line.match(/^## \[(.+?)\]\s*-?\s*(.*)$/); if (h2) { html += `<h4 class="cl-ver"><span>v${esc(h2[1])}</span><small>${esc(h2[2])}</small></h4>`; return; }
+      const h3 = line.match(/^### (.*)$/); if (h3) { html += `<div class="cl-kind ${h3[1].toLowerCase().replace(/[^a-z]/g, '')}">${esc(h3[1])}</div>`; return; }
+      if (line.trim()) html += `<p>${inline(line)}</p>`;
+    });
+    closeTo(0); return html;
+  }
+  function openChangelog() {
+    const v = S.appInfo || BUILD;
+    sheet(`<h2>What's new</h2><p class="sub" style="margin-top:2px">Installed: v${esc(v.version)}${v.build ? ' · build ' + esc(String(v.build)) : ''}</p>
+      <div class="changelog">${mdToHtml(BUILD.changelog || 'No changelog in this build.')}</div>`);
+  }
+  async function announceUpdate() {   // one-time note after the app was updated
+    const v = (await loadAppInfo()).version, seen = store.get('seenVersion');
+    if (seen && seen !== v) setTimeout(() => {
+      const t = $('#toast'); t.innerHTML = `🎉 Updated to v${esc(v)} · <u>What's new</u>`; t.classList.add('show'); t.onclick = () => { t.classList.remove('show'); openChangelog(); };
+      clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('show'); t.onclick = null; }, 6000);
+    }, 1200);
+    store.set('seenVersion', v);
+  }
   /* Eye button: hide/show money amounts and account identifiers everywhere. */
   function setPrivacy(on, announce) {
     S.privacy = on;
@@ -808,7 +854,8 @@
       <h3>News sentiment (optional)</h3><div class="card"><div class="field"><label>Alpha Vantage API key</label><input class="input mono" id="nkey" value="${esc(S.newsKey)}" placeholder="Free key from alphavantage.co"></div>
         <div class="hint">Adds a news-sentiment factor (20% weight) for FX pairs. Cached hourly to fit the free quota.</div><button class="btn ghost" id="nsave" style="margin-top:10px">Save key</button></div>
       <h3>Data</h3><div class="card">${S.conn.mode === 'demo' ? '<button class="btn ghost" id="reset" style="margin-bottom:10px">Reset paper account</button>' : ''}<button class="btn danger" id="wipe">Sign out & erase app data</button></div>
-      <p class="hint" style="text-align:center;margin-top:16px">Tradebot v1.0 · Not financial advice. Trading leveraged products carries a high risk of loss.</p>
+      <h3>About</h3><div class="card about" id="about">${aboutHtml()}</div>
+      <p class="hint" style="text-align:center;margin-top:12px">Not financial advice. Trading leveraged products carries a high risk of loss.</p>
     </div>`;
     bindTop();
     $('#conn').onclick = openConnect;
@@ -831,6 +878,8 @@
     $('#psave').onclick = () => { const n = $('#pname').value.trim(); if (!n) return toast('Name required'); Object.assign(p, { name: n, email: $('#pemail').value.trim(), riskProfile: risk }); Object.assign(S.bot, RISK_PRESETS[risk], { profile: risk }); save(); toast('Profile saved'); viewProfile(v); };
     $('#pbio').onchange = async e => { if (e.target.checked && !(await Security.verify('Enable fingerprint unlock'))) { e.target.checked = false; return; } p.biometric = e.target.checked; save(); toast(p.biometric ? 'Fingerprint enabled' : 'Fingerprint disabled'); };
     $('#ppin').onclick = changePin;
+    $('#whatsnew').onclick = () => openChangelog();
+    loadAppInfo().then(() => { const ab = $('#about'); if (ab) { ab.innerHTML = aboutHtml(); $('#whatsnew').onclick = () => openChangelog(); } });
     $('#phide').onchange = e => { S.prefs.hideByDefault = e.target.checked; save(); toast(e.target.checked ? 'Amounts will be hidden each time the app opens' : 'Amounts shown when the app opens'); };
     $('#pnow').onchange = e => setPrivacy(e.target.checked, true);
     $$('#cconf button').forEach(b => b.onclick = () => { S.prefs.confirmClose = b.dataset.c; save(); $$('#cconf button').forEach(x => x.classList.toggle('on', x === b)); toast(b.dataset.c === 'off' ? 'Close confirmation off' : b.dataset.c === 'loss' ? 'Confirm closing losing trades' : 'Confirm closing every trade'); });
@@ -1063,7 +1112,7 @@
     if (S.conn.mode === 'bridge') {
       S.broker = new Brokers.BridgeBroker({ url: S.conn.url, token: await Security.getSecret('bridge') });
       try {
-        const info = await S.broker.connect(onStatus); S.status = 'Connected';
+        const info = await S.broker.connect(onStatus); S.status = 'Connected'; S.bridgeVersion = info.version;
         log(`Connected to MT5 ${info.login} (${info.server}) via your VPS`, 'up');
         if (!info.tradeAllowed) { log('Algo Trading is OFF in MetaTrader 5. Turn it on, or orders will be rejected.', 'down'); toast('Turn on "Algo Trading" in MT5 on your VPS'); }
       } catch (e) { S.status = 'Error'; log('Bridge connection failed: ' + e.message, 'down'); throw e; }
@@ -1213,6 +1262,7 @@
   let booted = false;
   async function boot() {
     if (booted) return; booted = true;
+    announceUpdate();
     S.pollMs = isLive() ? 5000 : 2000;
     try { await connectBroker(); } catch (e) { toast('Account offline: ' + e.message); }
     pollT = setInterval(poll, S.pollMs);
