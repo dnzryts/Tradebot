@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.5.2] - 2026-11-25
+### Changed
+- Dashboard live trade cards are stacked vertically (full width, one under another) instead of a sideways-scrolling row. Swiping left or right on them switches tabs like anywhere else.
+
 ## [1.5.1] - 2026-11-25
 ### Fixed
 - **Manual orders in Fixed $ mode no longer fail with a bare "target too small" error.**

@@ -244,7 +244,7 @@
       if (e.touches.length !== 1 || !S.unlocked || !$('#view') || $('.sheet-bg') || $('.dlg-bg')) return;
       const t = e.touches[0];
       if (t.clientX < 24 || t.clientX > innerWidth - 24) return;            // leave screen edges to Android's back gesture
-      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad, .trades-scroll')) return; // these scroll/drag themselves
+      if (e.target.closest('input, textarea, select, .tabs-mini, .nav, canvas, .keypad')) return; // these scroll/drag themselves
       x0 = t.clientX; y0 = t.clientY; t0 = performance.now();
     }, { passive: true });
     document.addEventListener('touchend', e => {
