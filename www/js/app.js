@@ -32,13 +32,13 @@
     tab: 'home', broker: null, account: null, positions: [], history: [], analysis: {}, mood: null,
     pollMs: 0, focus: 'EURUSD', unlocked: false, status: 'Offline', dayStart: store.get('dayStart'),
   };
-  if (S.bot.enabled && S.conn.mode === 'mt5') S.bot.enabled = false; // never auto-resume live trading after restart
+  if (S.bot.enabled && S.conn.mode !== 'demo') S.bot.enabled = false; // never auto-resume live trading after restart
 
   /* ---------------- Helpers ---------------- */
   const fmt = (v, d = 2) => (v ?? 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
   const money = (v, c = S.account?.currency || 'USD') => (v < 0 ? '-' : '') + (c === 'USD' ? '$' : c + ' ') + fmt(Math.abs(v));
   const signed = v => (v >= 0 ? '+' : '-') + money(Math.abs(v)).replace('-', '');
-  const digits = sym => Brokers.SPECS[sym]?.digits ?? (sym.includes('JPY') ? 3 : 5);
+  const digits = sym => S.digitsOf?.[sym] ?? Brokers.SPECS[sym]?.digits ?? (sym.includes('JPY') ? 3 : 5);
   const px = (sym, v) => fmt(v, digits(sym));
   const time = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -264,7 +264,7 @@
 
   const topbar = (title) => `<div class="topbar"><div><div class="hello">${greeting()}, ${esc(S.profile.name)}</div><h2>${title}</h2></div>
     <div class="row" style="gap:8px"><button class="ring" id="ring" data-keep title="Live data · tap to refresh now">${ringSvg}</button>
-    <button class="icon-btn" id="connbtn" title="Account">${S.conn.mode === 'mt5' ? `<span class="dot ${S.status === 'Connected' ? 'live' : ''}"></span>` : icon('link')}</button></div></div>`;
+    <button class="icon-btn" id="connbtn" title="Account">${isLive() ? `<span class="dot ${S.status === 'Connected' ? 'live' : ''}"></span>` : icon('link')}</button></div></div>`;
   const ringSvg = '<svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle class="prog" cx="18" cy="18" r="15"/></svg><i></i>';
   const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
   const bindTop = () => {
@@ -285,7 +285,7 @@
     const mood = S.mood || { score: 0, label: 'Analysing…', bulls: 0, bears: 0 };
     paint(v, `<div class="screen">${topbar('Dashboard')}
       <div class="card hero">
-        <div class="row between"><span class="muted">Equity · ${esc(a.name || '—')}</span><span class="chip" style="background:rgba(255,255,255,.2)">${S.conn.mode === 'mt5' ? 'LIVE MT5' : 'PAPER'}</span></div>
+        <div class="row between"><span class="muted">Equity · ${esc(a.name || '—')}</span><span class="chip" style="background:rgba(255,255,255,.2)">${isLive() ? 'LIVE MT5' : 'PAPER'}</span></div>
         <div class="big mono" style="margin:6px 0 12px">${money(a.equity ?? 0)}</div>
         <div class="grid3"><div class="stat"><div class="lbl">Balance</div><div class="val mono">${money(a.balance ?? 0)}</div></div>
           <div class="stat"><div class="lbl">Floating</div><div class="val mono">${signed(pl)}</div></div>
@@ -309,6 +309,7 @@
     drawChart($('#chart'), S.focus);
   }
   const watch = () => S.bot.symbols.length ? S.bot.symbols : ['EURUSD'];
+  const isLive = () => S.conn.mode !== 'demo';
   const isBot = p => /^TB /.test(p.comment || '');
   const STRAT_CODE = { trend: 'T', breakout: 'B', reversion: 'R', sentiment: 'S' };
   const CODE_STRAT = { T: 'trend', B: 'breakout', R: 'reversion', S: 'sentiment' };
@@ -360,7 +361,7 @@
   }
   async function manualTrade(sym, side, volume) {
     if (!(volume > 0)) return toast('Enter a lot size');
-    if (S.conn.mode === 'mt5' && !(await ask({ title: `Place live ${side.toLowerCase()} order?`, message: `<b>${side} ${volume} lot ${sym}</b> at market on your MT5 account. Stop-loss and take-profit are set automatically.`, ok: `${side} ${sym}`, tone: side === 'BUY' ? 'up' : 'danger', ic: 'chart' }))) return;
+    if (isLive() && !(await ask({ title: `Place live ${side.toLowerCase()} order?`, message: `<b>${side} ${volume} lot ${sym}</b> at market on your MT5 account. Stop-loss and take-profit are set automatically.`, ok: `${side} ${sym}`, tone: side === 'BUY' ? 'up' : 'danger', ic: 'chart' }))) return;
     try { await placeOrder(sym, side, volume, 'Manual'); toast(`${side} ${volume} ${sym} placed`); $('#symsheet')?.remove(); poll(); }
     catch (e) { toast('Order failed: ' + e.message); }
   }
@@ -370,7 +371,7 @@
     const b = S.bot, all = S.allSymbols || Object.keys(Brokers.SPECS);
     v.innerHTML = `<div class="screen">${topbar('Auto-Trade')}
       <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
-      ${S.conn.mode === 'mt5' ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
+      ${isLive() ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
       <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
       <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
       <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
@@ -433,7 +434,7 @@
   function botStatusHtml() {
     const b = S.bot, botPos = S.positions.filter(p => isBot(p)).length;
     return `<div class="row between"><div class="row"><div class="avatar" style="background:var(--grad);color:#fff">${icon('bot')}</div><div><div class="title">Sentiment Bot</div>
-      <div class="sub"><span class="dot ${b.enabled ? 'live' : ''}"></span> ${b.enabled ? 'Running' : b.pausedReason || 'Paused'} · ${S.conn.mode === 'mt5' ? 'Live MT5' : 'Paper'}</div></div></div>
+      <div class="sub"><span class="dot ${b.enabled ? 'live' : ''}"></span> ${b.enabled ? 'Running' : b.pausedReason || 'Paused'} · ${isLive() ? 'Live MT5' : 'Paper'}</div></div></div>
       <label class="toggle"><input type="checkbox" id="bottoggle" ${b.enabled ? 'checked' : ''}><span></span></label></div>
       <div class="grid3" style="margin-top:12px"><div class="stat"><div class="lbl">Watching</div><div class="val">${b.symbols.length}</div></div>
       <div class="stat"><div class="lbl">Bot trades</div><div class="val">${botPos}/${b.maxPositions}</div></div><div class="stat"><div class="lbl">Today</div><div class="val mono ${cls(todayPnl())}">${signed(todayPnl())}</div></div></div>
@@ -441,7 +442,7 @@
   }
   async function toggleBot(on) {
     if (on && !S.bot.symbols.length) { toast('Pick at least one symbol'); $('#bottoggle').checked = false; return; }
-    if (on && S.conn.mode === 'mt5') {
+    if (on && isLive()) {
       const ok = await ask({ title: 'Enable live auto-trading?', message: 'The bot will open and close <b>real positions</b> on your MT5 account using your strategy and risk settings. You are responsible for any losses.', ok: 'Enable bot', tone: 'danger', ic: 'bot' });
       if (!ok || (S.profile.biometric && !(await Security.verify('Confirm to enable live auto-trading')))) { $('#bottoggle').checked = false; return; }
     }
@@ -458,7 +459,7 @@
     const wins = h.filter(d => d.profit > 0), realized = h.reduce((s, d) => s + d.profit, 0);
     const exp = {}; S.positions.forEach(p => exp[p.symbol] = (exp[p.symbol] || 0) + Math.abs(p.volume));
     paint(v, `<div class="screen">${topbar('Portfolio')}
-      <div class="card"><div class="row between"><div><div class="sub">Realised P/L (${S.conn.mode === 'mt5' ? '30 days' : 'all time'})</div><div class="big mono ${cls(realized)}" style="font-size:28px">${signed(realized)}</div></div>
+      <div class="card"><div class="row between"><div><div class="sub">Realised P/L (${isLive() ? '30 days' : 'all time'})</div><div class="big mono ${cls(realized)}" style="font-size:28px">${signed(realized)}</div></div>
         <div class="right"><div class="sub">Win rate</div><div class="title" style="font-size:20px">${h.length ? fmt(wins.length / h.length * 100, 0) : 0}%</div></div></div>
         ${h.length ? '<div class="chart-box" style="height:120px;margin-top:8px"><canvas id="eq" height="120"></canvas></div>' : '<div class="sub" style="margin:10px 0">Equity curve appears after your first closed trade.</div>'}
         <div class="grid3"><div class="stat"><div class="lbl">Trades</div><div class="val">${h.length}</div></div><div class="stat"><div class="lbl">Avg win</div><div class="val mono up">${money(wins.length ? wins.reduce((s, d) => s + d.profit, 0) / wins.length : 0)}</div></div>
@@ -489,7 +490,7 @@
     $$('[data-closeall]', root).forEach(b => b.onclick = openCloseAll);
     $$('[data-close]', root).forEach(b => b.onclick = async () => {
       const p = S.positions.find(x => x.id === b.dataset.close);
-      if (S.conn.mode === 'mt5' && !(await ask({ title: 'Close live position?', message: p ? `${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'} ${fmt(p.volume)} lot ${p.symbol} · P/L <b class="${cls(p.profit)}">${signed(p.profit)}</b>` : '', ok: 'Close position', tone: 'danger', ic: 'x' }))) return;
+      if (isLive() && !(await ask({ title: 'Close live position?', message: p ? `${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'} ${fmt(p.volume)} lot ${p.symbol} · P/L <b class="${cls(p.profit)}">${signed(p.profit)}</b>` : '', ok: 'Close position', tone: 'danger', ic: 'x' }))) return;
       try { await S.broker.closePosition(b.dataset.close); toast('Position closed'); log(`Closed position #${b.dataset.close} manually`); poll(); } catch (e) { toast('Close failed: ' + e.message); }
     });
   }
@@ -511,12 +512,12 @@
     sheet(`<h2>Close positions</h2><p class="sub">Market orders close at the current price. Floating P/L shown per group.</p>
       <div class="card" style="padding:4px 14px" id="closelist" data-view="close">${closeRowsHtml()}</div>
       <div class="card row between"><div><div class="title">Also stop the bot</div><div class="sub">Prevents new trades straight after closing</div></div><label class="toggle"><input type="checkbox" id="stopbot" ${S.bot.enabled ? 'checked' : ''}><span></span></label></div>
-      ${S.conn.mode === 'mt5' ? '<div class="notice">This closes <b>live</b> positions on your MT5 account.</div>' : ''}`, el => {
+      ${isLive() ? '<div class="notice">This closes <b>live</b> positions on your MT5 account.</div>' : ''}`, el => {
       $('#closelist', el).onclick = async e => { const b = e.target.closest('.close-opt'); if (!b || b.disabled) return;
         const [label, f] = CLOSE_FILTERS[b.dataset.f], n = S.positions.filter(f).length;
         if (!n) return;
         const grpPl = S.positions.filter(f).reduce((x, p) => x + p.profit, 0);
-        if (!(await ask({ title: `Close ${n} position${n === 1 ? '' : 's'}?`, message: `${label} · floating P/L <b class="${cls(grpPl)}">${signed(grpPl)}</b>${S.conn.mode === 'mt5' ? '<br>These are <b>live</b> positions on your MT5 account.' : ''}`, ok: n === 1 ? 'Close position' : `Close ${n}`, tone: 'danger', ic: 'x' }))) return;
+        if (!(await ask({ title: `Close ${n} position${n === 1 ? '' : 's'}?`, message: `${label} · floating P/L <b class="${cls(grpPl)}">${signed(grpPl)}</b>${isLive() ? '<br>These are <b>live</b> positions on your MT5 account.' : ''}`, ok: n === 1 ? 'Close position' : `Close ${n}`, tone: 'danger', ic: 'x' }))) return;
         const stop = $('#stopbot', el).checked; closeSheet(el);
         await closeAll(b.dataset.f, stop);
       };
@@ -544,9 +545,9 @@
       <div class="card row"><div class="avatar" style="background:${p.color};color:#fff;width:58px;height:58px;border-radius:20px;font-size:22px">${esc(p.name[0]).toUpperCase()}</div>
         <div class="grow"><div class="title" style="font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.email || 'No email')} · since ${new Date(p.created).toLocaleDateString()}</div>
         <span class="chip" style="margin-top:6px">${RISK_PRESETS[p.riskProfile]?.label || 'Custom'} investor</span></div></div>
-      <h3>Trading account</h3><div class="card"><div class="row between"><div class="row"><div class="avatar">${S.conn.mode === 'mt5' ? 'MT5' : 'SIM'}</div>
-        <div><div class="title">${S.conn.mode === 'mt5' ? `MT5 · ${esc(S.conn.login || S.conn.accountId?.slice(0, 8))}` : 'Paper trading'}</div><div class="sub">${S.conn.mode === 'mt5' ? esc(S.conn.server || 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
-        <button class="btn small" id="conn">${S.conn.mode === 'mt5' ? 'Manage' : 'Connect MT5'}</button></div></div>
+      <h3>Trading account</h3><div class="card"><div class="row between"><div class="row"><div class="avatar">${S.conn.mode === 'bridge' ? 'VPS' : isLive() ? 'MT5' : 'SIM'}</div>
+        <div><div class="title">${isLive() ? `MT5 · ${esc(S.conn.login || S.conn.accountId?.slice(0, 8))}` : 'Paper trading'}</div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
+        <button class="btn small" id="conn">${isLive() ? 'Manage' : 'Connect MT5'}</button></div></div>
       <h3>Theme</h3><div class="swatches">${Object.entries(THEMES).map(([k, c]) => `<button class="swatch ${S.theme === k ? 'on' : ''}" data-t="${k}"><i style="background:linear-gradient(135deg,${c[0]} 0 40%,${c[1]} 40% 70%,${c[2]} 70%)"></i>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>
       <h3>Edit profile</h3><div class="card">
         <div class="field"><label>Display name</label><input class="input" id="pname" value="${esc(p.name)}" maxlength="24"></div>
@@ -640,41 +641,72 @@
 
   /* ---------- Connect MT5 ---------- */
   function openConnect() {
-    let method = 'new';
-    sheet(`<h2>Configure MT5 account</h2><p class="sub">Tradebot reaches MetaTrader 5 through <b>MetaApi</b> (metaapi.cloud), a cloud bridge to your broker's MT5 server. Create a free MetaApi account and an API token first.</p>
-      <div class="seg" id="cmode" style="margin:12px 0"><button data-m="demo" class="${S.conn.mode === 'demo' ? 'on' : ''}">Paper (simulated)</button><button data-m="mt5" class="${S.conn.mode === 'mt5' ? 'on' : ''}">MT5 via MetaApi</button></div>
-      <div id="mt5form" class="${S.conn.mode === 'mt5' ? '' : 'hidden'}">
-        <div class="field"><label>MetaApi API token</label><input class="input mono" id="tok" type="password" placeholder="${S.conn.mode === 'mt5' ? 'Saved securely — leave blank to keep' : 'Paste token'}"></div>
+    let method = 'new', mode = S.conn.mode;
+    const intro = {
+      demo: 'Practice with a simulated market and $10,000 of virtual money. No account needed.',
+      mt5: 'Connect through <b>MetaApi</b> (metaapi.cloud), a paid cloud service that runs MT5 for you. No PC needed.',
+      bridge: 'Connect to <b>your own Windows PC or VPS</b> running MT5 and the free Tradebot bridge. Your MT5 password never leaves your server. See the VPS guide in the GitHub repo.',
+    };
+    sheet(`<h2>Configure MT5 account</h2>
+      <div class="seg" id="cmode" style="margin:12px 0 8px"><button data-m="demo" class="${mode === 'demo' ? 'on' : ''}">Paper</button><button data-m="bridge" class="${mode === 'bridge' ? 'on' : ''}">Own VPS</button><button data-m="mt5" class="${mode === 'mt5' ? 'on' : ''}">MetaApi</button></div>
+      <p class="sub" id="cintro" style="margin:0 0 12px">${intro[mode]}</p>
+      <div id="bridgeform" class="${mode === 'bridge' ? '' : 'hidden'}">
+        <div class="field"><label>Bridge URL</label><input class="input mono" id="burl" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://1-2-3-4.sslip.io" value="${esc(S.conn.url || '')}"><div class="hint">Shown at the end of the installer and saved in C:\\Tradebot\\CONNECTION.txt on your VPS.</div></div>
+        <div class="field"><label>Access key</label><input class="input mono" id="bkey" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${mode === 'bridge' ? 'Saved securely. Leave blank to keep it.' : 'Paste access key'}"></div>
+      </div>
+      <div id="mt5form" class="${mode === 'mt5' ? '' : 'hidden'}">
+        <div class="field"><label>MetaApi API token</label><input class="input mono" id="tok" type="password" placeholder="${mode === 'mt5' ? 'Saved securely. Leave blank to keep it.' : 'Paste token'}"></div>
         <div class="seg" id="cmeth" style="margin-bottom:12px"><button data-m="new" class="on">Add MT5 login</button><button data-m="id">Existing MetaApi account ID</button></div>
         <div id="fnew"><div class="field"><label>MT5 login</label><input class="input mono" id="lg" inputmode="numeric" value="${esc(S.conn.login || '')}"></div>
           <div class="field"><label>MT5 password (trading)</label><input class="input" id="pw" type="password"><div class="hint">Sent once to MetaApi to register the account; never stored on this phone.</div></div>
-          <div class="field"><label>Broker server</label><input class="input" id="sv" placeholder="e.g. ICMarketsSC-Demo" value="${esc(S.conn.server || '')}"></div></div>
+          <div class="field"><label>Broker server</label><input class="input" id="sv" placeholder="e.g. XMGlobal-MT5 2" value="${esc(S.conn.server || '')}"></div></div>
         <div id="fid" class="hidden"><div class="field"><label>MetaApi account ID</label><input class="input mono" id="aid" value="${esc(S.conn.accountId || '')}"></div></div>
-        <div class="notice" style="margin-bottom:12px">Use a <b>demo MT5 account</b> first. Live trading carries real financial risk.</div>
       </div>
+      <div class="notice ${mode === 'demo' ? 'hidden' : ''}" id="cwarn" style="margin-bottom:12px">Use a <b>demo MT5 account</b> first. Live trading carries real financial risk.</div>
       <div class="sub" id="cstat" style="margin-bottom:10px"></div>
       <button class="btn" id="cgo">Save & connect</button>`, el => {
-      $$('#cmode button', el).forEach(b => b.onclick = () => { $$('#cmode button', el).forEach(x => x.classList.toggle('on', x === b)); $('#mt5form', el).classList.toggle('hidden', b.dataset.m !== 'mt5'); });
+      $$('#cmode button', el).forEach(b => b.onclick = () => {
+        mode = b.dataset.m; $$('#cmode button', el).forEach(x => x.classList.toggle('on', x === b));
+        $('#mt5form', el).classList.toggle('hidden', mode !== 'mt5'); $('#bridgeform', el).classList.toggle('hidden', mode !== 'bridge');
+        $('#cwarn', el).classList.toggle('hidden', mode === 'demo'); $('#cintro', el).innerHTML = intro[mode]; $('#cstat', el).textContent = '';
+      });
       $$('#cmeth button', el).forEach(b => b.onclick = () => { method = b.dataset.m; $$('#cmeth button', el).forEach(x => x.classList.toggle('on', x === b)); $('#fnew', el).classList.toggle('hidden', method !== 'new'); $('#fid', el).classList.toggle('hidden', method !== 'id'); });
       $('#cgo', el).onclick = async () => {
-        const mode = $('#cmode .on', el).dataset.m, st = $('#cstat', el), btn = $('#cgo', el);
-        if (mode === 'demo') { S.bot.enabled = false; S.conn = { mode: 'demo' }; save(); el.remove(); await connectBroker(); toast('Switched to paper trading'); return; }
-        const token = $('#tok', el).value.trim() || await Security.getSecret('metaapi');
-        if (!token) return toast('MetaApi token required');
+        const st = $('#cstat', el), btn = $('#cgo', el);
+        if (mode === 'demo') { S.bot.enabled = false; S.conn = { mode: 'demo' }; save(); closeSheet(el); await connectBroker(); toast('Switched to paper trading'); return; }
         btn.disabled = true;
         try {
-          let accountId = $('#aid', el).value.trim(), login = $('#lg', el).value.trim(), server = $('#sv', el).value.trim();
-          if (method === 'new') {
-            if (!login || !$('#pw', el).value || !server) throw new Error('Login, password and server are required');
-            st.textContent = 'Registering account with MetaApi…';
-            accountId = await Brokers.MetaApiBroker.provision({ token, login, password: $('#pw', el).value, server, name: `${S.profile.name} MT5` });
-            $('#pw', el).value = '';
-          } else if (!accountId) throw new Error('Account ID required');
-          await Security.setSecret('metaapi', token);
-          S.bot.enabled = false; S.conn = { mode: 'mt5', accountId, login, server }; save();
-          st.textContent = 'Deploying & connecting to broker (can take a minute)…';
-          await connectBroker(s => st.textContent = 'Connecting… ' + s);
-          el.remove(); toast('MT5 account connected');
+          if (mode === 'bridge') {
+            let url = $('#burl', el).value.trim().replace(/\/+$/, '');
+            if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+            const key = $('#bkey', el).value.trim() || (S.conn.mode === 'bridge' ? await Security.getSecret('bridge') : '');
+            if (!url) throw new Error('Enter the Bridge URL');
+            if (!key) throw new Error('Enter the access key');
+            if (!/^https:\/\//i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url)) throw new Error('The bridge URL must start with https://');
+            st.textContent = 'Checking the bridge…';
+            const probe = new Brokers.BridgeBroker({ url, token: key });
+            const info = await probe.connect(m => st.textContent = m);
+            await Security.setSecret('bridge', key);
+            S.bot.enabled = false; S.conn = { mode: 'bridge', url, login: String(info.login), server: info.server }; save();
+            st.textContent = 'Connected. Loading your account…';
+            await connectBroker();
+            closeSheet(el); toast(`Connected to MT5 ${info.login} via your VPS`);
+          } else {
+            const token = $('#tok', el).value.trim() || await Security.getSecret('metaapi');
+            if (!token) throw new Error('MetaApi token required');
+            let accountId = $('#aid', el).value.trim(), login = $('#lg', el).value.trim(), server = $('#sv', el).value.trim();
+            if (method === 'new') {
+              if (!login || !$('#pw', el).value || !server) throw new Error('Login, password and server are required');
+              st.textContent = 'Registering account with MetaApi…';
+              accountId = await Brokers.MetaApiBroker.provision({ token, login, password: $('#pw', el).value, server, name: `${S.profile.name} MT5` });
+              $('#pw', el).value = '';
+            } else if (!accountId) throw new Error('Account ID required');
+            await Security.setSecret('metaapi', token);
+            S.bot.enabled = false; S.conn = { mode: 'mt5', accountId, login, server }; save();
+            st.textContent = 'Deploying & connecting to broker (can take a minute)…';
+            await connectBroker(s => st.textContent = 'Connecting… ' + s);
+            closeSheet(el); toast('MT5 account connected');
+          }
         } catch (e) { st.innerHTML = `<span class="down">${esc(e.message)}</span>`; }
         btn.disabled = false;
       };
@@ -715,20 +747,46 @@
   }
 
   /* ================= DATA + AUTO-TRADER ================= */
+  /* Brokers name symbols differently (EURUSD., EURUSD#, GOLD…). Map the watch list onto the broker's names. */
+  const SYMBOL_ALIASES = { XAUUSD: ['GOLD'], XAGUSD: ['SILVER'], US30: ['US30CASH', 'DJ30', 'WS30', 'DOWJONES'], BTCUSD: ['BITCOIN', 'BTCUSDT'] };
+  function mapWatchSymbols() {
+    const all = S.allSymbols || []; if (!all.length) return;
+    const norm = x => x.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const find = s => { if (all.includes(s)) return s; for (const c of [norm(s), ...(SYMBOL_ALIASES[norm(s)] || [])]) { const hit = all.find(x => norm(x) === c) || all.find(x => norm(x).startsWith(c)); if (hit) return hit; } return null; };
+    const before = S.bot.symbols.join(', ');
+    let mapped = [...new Set(S.bot.symbols.map(find).filter(Boolean))];
+    if (!mapped.length) mapped = all.slice(0, 4);
+    S.bot.symbols = mapped; if (!mapped.includes(S.focus)) S.focus = mapped[0];
+    if (mapped.join(', ') !== before) log(`Watch list matched to your broker's symbols: ${mapped.join(', ')}`);
+    save();
+  }
+  /* Profit-currency conversion: 1 when P/L is already in USD, price when the quote currency isn't (e.g. USDJPY). */
+  const quoteConv = (sym, spec, price) => {
+    if (spec?.currencyProfit) return spec.currencyProfit === 'USD' ? 1 : (/^USD/i.test(sym) ? price : 1);
+    const n = sym.toUpperCase().replace(/[^A-Z]/g, ''); return (/^USD/.test(n) && !/USD$/.test(n)) ? price : 1;
+  };
   S.candleCache = {};
   async function connectBroker(onStatus) {
     S.broker?.destroy?.(); S.status = 'Connecting';
-    if (S.conn.mode === 'mt5') {
+    if (S.conn.mode === 'bridge') {
+      S.broker = new Brokers.BridgeBroker({ url: S.conn.url, token: await Security.getSecret('bridge') });
+      try {
+        const info = await S.broker.connect(onStatus); S.status = 'Connected';
+        log(`Connected to MT5 ${info.login} (${info.server}) via your VPS`, 'up');
+        if (!info.tradeAllowed) { log('Algo Trading is OFF in MetaTrader 5. Turn it on, or orders will be rejected.', 'down'); toast('Turn on "Algo Trading" in MT5 on your VPS'); }
+      } catch (e) { S.status = 'Error'; log('Bridge connection failed: ' + e.message, 'down'); throw e; }
+      try { S.allSymbols = (await S.broker.getSymbols()).slice(0, 300); mapWatchSymbols(); } catch { }
+    } else if (S.conn.mode === 'mt5') {
       const token = await Security.getSecret('metaapi');
       S.broker = new Brokers.MetaApiBroker({ token, accountId: S.conn.accountId, region: S.conn.region });
       try { await S.broker.connect(onStatus); S.conn.region = S.broker.region; save(); S.status = 'Connected'; log('Connected to MT5 account', 'up'); }
       catch (e) { S.status = 'Error'; log('MT5 connection failed: ' + e.message, 'down'); throw e; }
-      try { const syms = await S.broker.getSymbols(); S.allSymbols = Array.isArray(syms) ? syms.slice(0, 200) : null; } catch { }
+      try { const syms = await S.broker.getSymbols(); S.allSymbols = Array.isArray(syms) ? syms.slice(0, 300) : null; mapWatchSymbols(); } catch { }
     } else {
       S.broker = new Brokers.DemoBroker(store); S.allSymbols = Object.keys(Brokers.SPECS); S.status = 'Connected';
       S.broker.onEvent = ev => { if (ev.type === 'closed' && ev.deal.reason !== 'Manual') log(`${ev.deal.reason} hit on ${ev.deal.symbol}: ${signed(ev.deal.profit)}`, cls(ev.deal.profit)); };
     }
-    S.pollMs = S.conn.mode === 'mt5' ? 5000 : 2000;
+    S.pollMs = isLive() ? 5000 : 2000;
     if (pollT) { clearInterval(pollT); pollT = setInterval(poll, S.pollMs); }
     S.candleCache = {}; await poll(); await analyseAll(); scheduleBot(true);
   }
@@ -737,10 +795,10 @@
     ringBusy(true);
     try {
       [S.account, S.positions] = await Promise.all([S.broker.getAccount(), S.broker.getPositions()]);
-      if (!S._histT || Date.now() - S._histT > (S.conn.mode === 'mt5' ? 60000 : 0)) { S.history = await S.broker.getHistory(); S._histT = Date.now(); }
+      if (!S._histT || Date.now() - S._histT > (isLive() ? 60000 : 0)) { S.history = await S.broker.getHistory(); S._histT = Date.now(); }
       const today = new Date().toDateString();
       if (!S.dayStart || S.dayStart.day !== today) { S.dayStart = { day: today, equity: S.account.equity }; store.set('dayStart', S.dayStart); }
-      if (S.conn.mode === 'mt5') S.status = 'Connected';
+      if (isLive()) S.status = 'Connected';
       checkBasket();
     } catch (e) { S.status = 'Error'; }
     refreshLive(); ringBusy(false); ringCycle();
@@ -765,6 +823,7 @@
     await Promise.all(syms.map(async s => {
       try {
         const c = await S.broker.getCandles(s, S.bot.timeframe, 200); S.candleCache[s] = c;
+        if (S.conn.mode !== 'demo' && !(s in (S.digitsOf ||= {}))) { try { S.digitsOf[s] = (await S.broker.getSpec(s)).digits; } catch { } }
         const news = await Brokers.News.forSymbol(s, S.newsKey);
         S.analysis[s] = Engine.analyse(c, { threshold: S.bot.threshold, news });
       } catch (e) { /* symbol unavailable */ }
@@ -775,7 +834,7 @@
 
   function lotFor(sym, a, spec, slMult = S.bot.slAtr, riskMult = 1) {
     const eq = S.account.equity, risk = eq * S.bot.riskPct / 100 * riskMult, slDist = a.atr * slMult;
-    let perLot = slDist * spec.contractSize; if (/^USD/.test(sym) && !/USD$/.test(sym)) perLot /= a.price; // quote not USD (e.g. USDJPY)
+    const perLot = slDist * spec.contractSize / quoteConv(sym, spec, a.price);
     let vol = risk / (perLot || 1e9);
     const step = spec.volumeStep || .01; vol = Math.floor(vol / step) * step;
     return +Math.min(Math.max(vol, spec.minVolume || .01), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
@@ -784,7 +843,7 @@
      distances from that (rounded) lot so profit at TP = tpUsd and loss at SL = slUsd. */
   function usdPlan(sym, a, spec, tpAtr = S.bot.tpAtr, lotOverride) {
     const cs = spec.contractSize || 1, step = spec.volumeStep || .01, minV = spec.minVolume || .01;
-    const conv = (/^USD/.test(sym) && !/USD$/.test(sym)) ? a.price : 1; // quote currency not USD (e.g. USDJPY)
+    const conv = quoteConv(sym, spec, a.price);
     let lot = lotOverride || Math.round(S.bot.tpUsd * conv / (tpAtr * a.atr * cs) / step) * step;
     lot = +Math.min(Math.max(lot, minV), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
     return { lot, tpDist: S.bot.tpUsd * conv / (lot * cs), slDist: S.bot.slUsd * conv / (lot * cs) };
@@ -848,16 +907,16 @@
   let pollT, botT, anaT;
   function scheduleBot(restart) {
     clearInterval(botT);
-    const iv = Math.max(S.conn.mode === 'mt5' ? 30 : 5, S.bot.intervalSec) * 1000;
+    const iv = Math.max(isLive() ? 30 : 5, S.bot.intervalSec) * 1000;
     if (S.bot.enabled) { botT = setInterval(botCycle, iv); if (restart) botCycle(); }
   }
   let booted = false;
   async function boot() {
     if (booted) return; booted = true;
-    S.pollMs = S.conn.mode === 'mt5' ? 5000 : 2000;
+    S.pollMs = isLive() ? 5000 : 2000;
     try { await connectBroker(); } catch (e) { toast('Account offline: ' + e.message); }
     pollT = setInterval(poll, S.pollMs);
-    anaT = setInterval(() => !S.bot.enabled && analyseAll(), S.conn.mode === 'mt5' ? 60000 : 6000);
+    anaT = setInterval(() => !S.bot.enabled && analyseAll(), isLive() ? 60000 : 6000);
     try { window.Capacitor?.Plugins?.LocalNotifications?.requestPermissions(); } catch { }
   }
   // Re-lock when app goes to background for > 60s

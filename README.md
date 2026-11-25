@@ -27,7 +27,7 @@
 | 👋 **Welcome & onboarding** | Swipeable 3-step intro, then a guided profile setup |
 | 🔐 **Fingerprint lock** | Android BiometricPrompt unlock with a 6-digit PIN fallback; the app re-locks after 60 s in the background |
 | 🔑 **Secure credentials** | MetaApi token stored in the Android Keystore via the biometric plugin. Your MT5 password is never stored on the phone |
-| 🔗 **MT5 account setup** | Connect any broker's MT5 login through [MetaApi](https://metaapi.cloud) (register a new login, or link an existing MetaApi account ID) |
+| 🔗 **MT5 account setup** | Two ways: **Own VPS bridge** (free, runs next to MT5 on your Windows PC/VPS using MetaQuotes' official Python package, see [docs/VPS_BRIDGE.md](docs/VPS_BRIDGE.md)) or [MetaApi](https://metaapi.cloud) (paid cloud, no PC needed) |
 | 📈 **Market sentiment** | Per-symbol score from −100 to +100 built from 7 technical factors plus optional news sentiment, with a confidence rating and a market-mood gauge |
 | ✨ **Auto strategy** | Detects each symbol's regime and picks Trend, Breakout, Reversion or Sentiment logic, sized by the overall market mood. A live *strategy radar* shows each decision |
 | 💵 **Fixed $ targets** | Take-profit and stop-loss in dollars per trade (e.g. +$3 / −$3) with automatic lot sizing, plus basket targets that close all bot trades at a combined profit or loss |
@@ -66,6 +66,10 @@ npm run apk:debug         # → android/app/build/outputs/apk/debug/app-debug.ap
 
 ## Connect your MT5 account
 
+**Option 1: Own VPS bridge (free).** Install MT5 on a Windows PC or VPS, run one PowerShell command, then enter the Bridge URL and Access key under **Profile → Connect MT5 → Own VPS**. Full guide: [docs/VPS_BRIDGE.md](docs/VPS_BRIDGE.md).
+
+**Option 2: MetaApi (paid cloud).**
+
 Short version (full guide in [docs/MT5_SETUP.md](docs/MT5_SETUP.md)):
 1. Create a free account at **metaapi.cloud** and generate an **API token**.
 2. In Tradebot, go to **Profile → Connect MT5** (or tap the link icon at top right) and choose **MT5 via MetaApi**.
@@ -96,6 +100,7 @@ tradebot/
 │       ├── engine.js         # Indicators + sentiment scoring
 │       ├── broker.js         # DemoBroker (paper) + MetaApiBroker (MT5) + news sentiment
 │       └── security.js       # Fingerprint, PIN hashing, Keystore secrets
+├── bridge/                   # Own VPS bridge: bridge.py (FastAPI + MetaTrader5), install.ps1
 ├── assets/                   # Icon & splash sources (→ @capacitor/assets)
 ├── scripts/patch-android.mjs # Adds permissions, version, portrait lock
 ├── capacitor.config.json
@@ -106,6 +111,7 @@ tradebot/
 ## Documentation
 
 - [Building the APK](docs/BUILDING.md): local builds, signing, CI secrets
+- [Own VPS bridge](docs/VPS_BRIDGE.md): free MT5 connection through your own Windows PC or VPS
 - [MT5 / MetaApi setup](docs/MT5_SETUP.md): step-by-step account connection and troubleshooting
 - [Strategy & risk engine](docs/STRATEGY.md): factors, weights, sizing, kill-switches
 - [Architecture](docs/ARCHITECTURE.md): modules, data flow, broker interface
@@ -115,7 +121,7 @@ tradebot/
 ## Known limitations
 
 - The bot runs while the app is open (in the foreground, or recently backgrounded). Android may suspend it in the background. For unattended 24/5 trading, run the strategy server-side (a MetaApi-hosted or VPS script) using the same logic.
-- MetaApi is a third-party paid service with a free tier. Its pricing and limits apply.
+- MetaApi is a paid third-party service; the free alternative is the Own VPS bridge, which needs a Windows machine running MT5.
 - Sentiment is derived mainly from price action. News sentiment (Alpha Vantage) is optional and limited to FX pairs.
 - Paper mode runs an accelerated synthetic market (about 18 s per candle) for demonstration. Its results don't predict live performance.
 

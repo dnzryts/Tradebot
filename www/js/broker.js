@@ -163,6 +163,45 @@
     destroy() {}
   }
 
+  /* ---------------- Own VPS bridge (MT5 + official MetaTrader5 Python package) ---------------- */
+  class BridgeBroker {
+    constructor({ url, token }) { this.kind = 'bridge'; this.url = (url || '').replace(/\/+$/, ''); this.token = token; this.specCache = {}; }
+    async _req(path, opts = {}, timeoutMs = 20000) {
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const t = ctl && setTimeout(() => ctl.abort(), timeoutMs);
+      let res;
+      try {
+        res = await fetch(this.url + path, { ...opts, signal: ctl?.signal, headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json', Accept: 'application/json' } });
+      } catch (e) { throw new Error(e.name === 'AbortError' ? 'Bridge did not respond in time' : `Cannot reach the bridge at ${this.url}`); }
+      finally { t && clearTimeout(t); }
+      const txt = await res.text(); let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { detail: txt.slice(0, 200) }; }
+      if (res.status === 401) throw new Error('Access key rejected by the bridge');
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : (data.message || `Bridge error ${res.status}`));
+      return data;
+    }
+    async connect(onStatus) {
+      onStatus && onStatus('Contacting your bridge…');
+      const h = await this._req('/health', {}, 12000);
+      if (!h.ok) throw new Error('This URL is not a Tradebot bridge');
+      onStatus && onStatus('Checking MetaTrader 5…');
+      const st = await this._req('/status');
+      if (!st.connected) throw new Error('MetaTrader 5 on your VPS is not connected to the broker');
+      this.info = st; return st;
+    }
+    async getAccount() { return this._req('/account'); }
+    async getPositions() { return this._req('/positions'); }
+    async getHistory() { return this._req('/history?days=30'); }
+    async getSymbols() { return this._req('/symbols'); }
+    async getSpec(sym) { return this.specCache[sym] ||= await this._req(`/symbols/${encodeURIComponent(sym)}/spec`); }
+    async getPrice(sym) { return this._req(`/symbols/${encodeURIComponent(sym)}/price`); }
+    async getCandles(sym, tf = '15m', limit = 200) { return this._req(`/symbols/${encodeURIComponent(sym)}/candles?timeframe=${tf}&limit=${limit}`); }
+    async trade({ symbol, side, volume, stopLoss, takeProfit, comment }) {
+      return this._req('/trade', { method: 'POST', body: JSON.stringify({ symbol, side, volume, stopLoss: stopLoss ?? null, takeProfit: takeProfit ?? null, comment: comment || '' }) });
+    }
+    async closePosition(id) { return this._req(`/positions/${encodeURIComponent(id)}/close`, { method: 'POST' }); }
+    destroy() {}
+  }
+
   /* Optional news sentiment via Alpha Vantage NEWS_SENTIMENT (free key, ~25 calls/day → cached 1h). */
   const News = {
     cache: {},
@@ -181,5 +220,5 @@
     },
   };
 
-  global.Brokers = { DemoBroker, MetaApiBroker, News, SPECS };
+  global.Brokers = { DemoBroker, MetaApiBroker, BridgeBroker, News, SPECS };
 })(window);

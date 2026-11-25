@@ -10,6 +10,13 @@
 - **Release builds** disable WebView remote debugging (`webContentsDebuggingEnabled: false`).
 - **CSP** in `index.html` restricts network calls to MetaApi (`*.agiliumtrade.ai`) and Alpha Vantage.
 
+## Own VPS bridge
+
+- The bridge listens only on `127.0.0.1`. It is exposed solely through Caddy over **HTTPS** with an automatic certificate.
+- Every request needs the 256-bit **access key**, compared in constant time; failed attempts are delayed. In the app, the key is stored in the Android Keystore.
+- The bridge never stores your MT5 password. It attaches to the MT5 terminal you logged into.
+- If the key leaks, re-run `install.ps1 -NewKey` and update the app. Details: [VPS_BRIDGE.md](VPS_BRIDGE.md#security).
+
 ## What a lost or stolen phone exposes
 
 An attacker would need your fingerprint or PIN to open the app. The token sits in the Keystore. If you lose your phone, **revoke the MetaApi token** in the MetaApi dashboard and change your MT5 password at your broker.

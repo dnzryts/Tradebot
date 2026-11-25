@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-11-25
+### Added
+- **Own VPS bridge** (`bridge/`): a free alternative to MetaApi. `bridge.py` is a FastAPI server that runs next to MetaTrader 5 on your own Windows PC or VPS and uses MetaQuotes' official `MetaTrader5` Python package. It has access-key auth, serialised MT5 calls, automatic order-filling-mode selection and Tradebot magic-number tagging.
+- `bridge/install.ps1`: one-command Windows installer (Python 3.12, virtual environment, packages, random access key, Caddy HTTPS on `<ip>.sslip.io` or your own domain, firewall, auto-start tasks).
+- App: **Profile → Connect MT5 → Own VPS** with Bridge URL and Access key (stored in the Android Keystore). Includes connection checks, an "Algo Trading is OFF" warning, and automatic mapping of the watch list to the broker's symbol names (e.g. `GOLD`, `EURUSD.`).
+- docs/VPS_BRIDGE.md: step-by-step setup, maintenance, security, troubleshooting and API reference.
+
+### Changed
+- All live-account safety checks (confirmations, restart lock, warnings) apply to both MetaApi and Own VPS.
+- Price digits and profit-currency conversion come from the broker's symbol specification when available.
+- The app's network policy allows HTTPS to your bridge's domain.
+
 ## [1.2.0] - 2026-11-25
 ### Added
 - **Fixed $ targets.** Auto-Trade → Profit & loss targets → *Fixed $ amount* sets take-profit and stop-loss in dollars per trade (default +$3 / −$3). The bot sizes each lot so the target sits about TP × ATR away (within Max lot and broker limits), then sets exact SL/TP prices so the dollar result is fixed on every symbol.

@@ -1,5 +1,7 @@
 # Connecting a MetaTrader 5 account
 
+> **Two ways to connect.** This page covers **MetaApi** (paid cloud, no PC needed). For the free option, where MT5 and a small bridge run on your own Windows PC or VPS, see **[VPS_BRIDGE.md](VPS_BRIDGE.md)**.
+
 MetaTrader 5 has no public REST API that a phone app can call directly. Tradebot uses **[MetaApi](https://metaapi.cloud)**, a cloud service that runs an MT5 terminal for your login and exposes it through a REST API.
 
 ```

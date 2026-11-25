@@ -14,6 +14,8 @@ flowchart LR
   SEC -->|NativeBiometric plugin| KS[("Android Keystore")]
   BRK -->|CapacitorHttp| MA["MetaApi REST<br/>provisioning · client · market-data"]
   MA --> MT5[("Broker MT5 server")]
+  BRK -->|HTTPS + access key| BR["Own VPS: Caddy → bridge.py<br/>(FastAPI + MetaTrader5 pkg)"]
+  BR --> TERM["MT5 terminal"] --> MT5
   BRK -->|optional| AV["Alpha Vantage<br/>NEWS_SENTIMENT"]
 ```
 
@@ -23,7 +25,8 @@ flowchart LR
 |---|---|
 | `www/js/app.js` | App state `S`, the screen router (welcome → setup → lock → main tabs), rendering, canvas charts, polling loop, auto-trader `botCycle()` |
 | `www/js/engine.js` | Pure functions: `ema`, `rsi`, `atr`, MACD, Bollinger, `analyse(candles)`, `marketMood()` |
-| `www/js/broker.js` | `DemoBroker` (offline simulator with SL/TP execution), `MetaApiBroker` (REST), `News` (Alpha Vantage) |
+| `www/js/broker.js` | `DemoBroker` (offline simulator with SL/TP execution), `MetaApiBroker` (MetaApi REST), `BridgeBroker` (Own VPS bridge REST), `News` (Alpha Vantage) |
+| `bridge/bridge.py` | Own VPS bridge: FastAPI server over MetaQuotes' `MetaTrader5` package (see [VPS_BRIDGE.md](VPS_BRIDGE.md#bridge-api-for-developers)) |
 | `www/js/security.js` | `verify()` biometric prompt, `hashPin()` SHA-256, `setSecret/getSecret` (Keystore on device, localStorage in preview) |
 | `www/css/app.css` | Design tokens and 4 themes via `[data-theme]` CSS variables |
 
@@ -44,7 +47,7 @@ trade({symbol, side: 'BUY'|'SELL', volume, stopLoss, takeProfit, comment})
 closePosition(id)
 ```
 
-To add another backend (for example a self-hosted Python bridge using the `MetaTrader5` package on a Windows VPS), implement this interface and add it to `connectBroker()`.
+`BridgeBroker` implements this interface against the Own VPS bridge (`bridge/bridge.py`). To add another backend, implement the same interface and add it to `connectBroker()` and the Connect sheet.
 
 ### MetaApi endpoints used
 
