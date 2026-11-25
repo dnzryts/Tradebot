@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.7.3] - 2026-11-25
+### Fixed
+- **Pages flickered after a swipe.** When a swipe finished, the new page was rebuilt with the default fade-in animation even though it had already slid into view, so it flashed. Pages that arrive by swipe now appear with no entry animation, and live refreshes can't restart it. Tapping the bottom bar keeps its slide-in.
+
 ## [1.7.2] - 2026-11-25
 ### Added
 - **About section** at the bottom of Profile:

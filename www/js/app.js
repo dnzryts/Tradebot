@@ -244,7 +244,9 @@
     S.tab = tab;
     $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
     $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0); document.body.scrollTop = 0;
-    const scr = $('#view .screen'); if (scr && !noAnim) scr.classList.add(dir > 0 ? 'enter-right' : 'enter-left');
+    // Arriving by swipe: the page is already on screen, so no entry animation at all (the default fade made it flicker).
+    // 'enter-*' classes are preserved by live-refresh patching, so this can't re-trigger an animation later.
+    const scr = $('#view .screen'); if (scr) scr.classList.add(noAnim ? 'enter-none' : dir > 0 ? 'enter-right' : 'enter-left');
     if (tab === 'markets') analyseAll();
   }
   /* Swipe between tabs like a native pager: the neighbouring page is rendered beside the current one and both
