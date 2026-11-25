@@ -129,7 +129,8 @@ All responses are JSON. Every endpoint except `/health` needs `Authorization: Be
 | GET | `/positions` | Open positions (`id`, `symbol`, `type`, `volume`, prices, SL/TP, `profit`, `comment`, `magic`) |
 | GET | `/history?days=30` | Closed deals (profit includes commission, swap and fees) |
 | GET | `/symbols` | Broker symbols (Market Watch first) |
-| GET | `/symbols/{s}/spec` | Digits, contract size, volume limits, stops level, profit currency |
+| GET | `/symbols/catalog` | All symbols with MT5 folder `path` (e.g. `Forex\\Majors\\EURUSD`, `Metals\\GOLD`) and `desc`; the app builds its categories from this |
+| GET | `/symbols/{s}/spec` | Digits, contract size, volume limits, stops level, profit currency, `tickSize` / `tickValue` (exact $ per tick for 1 lot) |
 | GET | `/symbols/{s}/price` | Bid / ask |
 | GET | `/symbols/{s}/candles?timeframe=15m&limit=200` | OHLC candles (`1m 5m 15m 30m 1h 4h 1d`) |
 | POST | `/trade` | `{symbol, side: BUY\|SELL, volume, stopLoss?, takeProfit?, comment?}` market order |

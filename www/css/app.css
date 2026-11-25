@@ -380,3 +380,11 @@ html.private #eq { display: none; }
 .screen.enter-left { animation: enterLeft .22s cubic-bezier(.2,.8,.2,1); }
 @keyframes enterRight { from { opacity: .35; transform: translateX(48px); } to { opacity: 1; transform: none; } }
 @keyframes enterLeft { from { opacity: .35; transform: translateX(-48px); } to { opacity: 1; transform: none; } }
+
+/* ===== Markets: search, categories, stars ===== */
+#mktq { margin: 0 0 10px; }
+.tabs-mini.cats { margin-bottom: 12px; }
+.tabs-mini.cats button span { margin-left: 6px; font-size: 11px; opacity: .7; }
+.mrow { cursor: pointer; }
+.star { width: 34px; height: 34px; flex: none; border-radius: 11px; font-size: 19px; line-height: 1; color: var(--muted); background: var(--card2); }
+.star.on { color: #f5c542; background: color-mix(in srgb, #f5c542 14%, var(--card2)); }

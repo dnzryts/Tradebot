@@ -3,15 +3,45 @@
    - MetaApiBroker: real MT5 account via MetaApi cloud REST API (https://metaapi.cloud).
    Both expose the same async interface used by the app and the auto-trader. */
 (function (global) {
+  /* Paper-trading universe. q = quote (profit) currency; vol ≈ typical 15-minute move. */
   const SPECS = {
-    EURUSD: { base: 1.0820, vol: .00055, digits: 5, contract: 100000, quoteUsd: true },
-    GBPUSD: { base: 1.2710, vol: .00065, digits: 5, contract: 100000, quoteUsd: true },
-    USDJPY: { base: 151.20, vol: .085, digits: 3, contract: 100000, quoteUsd: false },
-    AUDUSD: { base: 0.6560, vol: .00045, digits: 5, contract: 100000, quoteUsd: true },
-    XAUUSD: { base: 2640.0, vol: 2.4, digits: 2, contract: 100, quoteUsd: true },
-    BTCUSD: { base: 96500, vol: 210, digits: 2, contract: 1, quoteUsd: true },
-    US30:   { base: 44200, vol: 38, digits: 1, contract: 1, quoteUsd: true },
+    // Forex majors
+    EURUSD: { base: 1.0820, vol: .00055, digits: 5, contract: 100000, q: 'USD', cat: 'Forex', desc: 'Euro vs US Dollar' },
+    GBPUSD: { base: 1.2710, vol: .00065, digits: 5, contract: 100000, q: 'USD', cat: 'Forex', desc: 'Pound vs US Dollar' },
+    USDJPY: { base: 151.20, vol: .085, digits: 3, contract: 100000, q: 'JPY', cat: 'Forex', desc: 'US Dollar vs Yen' },
+    AUDUSD: { base: 0.6560, vol: .00045, digits: 5, contract: 100000, q: 'USD', cat: 'Forex', desc: 'Australian Dollar vs US Dollar' },
+    USDCHF: { base: 0.8850, vol: .0005, digits: 5, contract: 100000, q: 'CHF', cat: 'Forex', desc: 'US Dollar vs Swiss Franc' },
+    USDCAD: { base: 1.3950, vol: .0006, digits: 5, contract: 100000, q: 'CAD', cat: 'Forex', desc: 'US Dollar vs Canadian Dollar' },
+    NZDUSD: { base: 0.5880, vol: .0004, digits: 5, contract: 100000, q: 'USD', cat: 'Forex', desc: 'NZ Dollar vs US Dollar' },
+    // Forex crosses
+    EURGBP: { base: 0.8510, vol: .0003, digits: 5, contract: 100000, q: 'GBP', cat: 'Forex', desc: 'Euro vs Pound' },
+    EURJPY: { base: 163.50, vol: .10, digits: 3, contract: 100000, q: 'JPY', cat: 'Forex', desc: 'Euro vs Yen' },
+    GBPJPY: { base: 192.40, vol: .14, digits: 3, contract: 100000, q: 'JPY', cat: 'Forex', desc: 'Pound vs Yen' },
+    AUDJPY: { base: 99.20, vol: .08, digits: 3, contract: 100000, q: 'JPY', cat: 'Forex', desc: 'Australian Dollar vs Yen' },
+    EURAUD: { base: 1.6490, vol: .0009, digits: 5, contract: 100000, q: 'AUD', cat: 'Forex', desc: 'Euro vs Australian Dollar' },
+    EURCHF: { base: 0.9420, vol: .0004, digits: 5, contract: 100000, q: 'CHF', cat: 'Forex', desc: 'Euro vs Swiss Franc' },
+    CADJPY: { base: 108.40, vol: .07, digits: 3, contract: 100000, q: 'JPY', cat: 'Forex', desc: 'Canadian Dollar vs Yen' },
+    // Metals
+    XAUUSD: { base: 2640.0, vol: 2.4, digits: 2, contract: 100, q: 'USD', cat: 'Metals', desc: 'Gold' },
+    XAGUSD: { base: 31.20, vol: .06, digits: 3, contract: 5000, q: 'USD', cat: 'Metals', desc: 'Silver' },
+    XPTUSD: { base: 955.0, vol: 2.2, digits: 2, contract: 50, q: 'USD', cat: 'Metals', desc: 'Platinum' },
+    // Energy
+    USOIL: { base: 69.80, vol: .12, digits: 2, contract: 1000, q: 'USD', cat: 'Energy', desc: 'WTI Crude Oil' },
+    UKOIL: { base: 73.40, vol: .12, digits: 2, contract: 1000, q: 'USD', cat: 'Energy', desc: 'Brent Crude Oil' },
+    NGAS: { base: 3.150, vol: .012, digits: 3, contract: 10000, q: 'USD', cat: 'Energy', desc: 'Natural Gas' },
+    // Indices
+    US30: { base: 44200, vol: 38, digits: 1, contract: 1, q: 'USD', cat: 'Indices', desc: 'Dow Jones 30' },
+    US500: { base: 5980, vol: 5.5, digits: 1, contract: 1, q: 'USD', cat: 'Indices', desc: 'S&P 500' },
+    NAS100: { base: 20850, vol: 22, digits: 1, contract: 1, q: 'USD', cat: 'Indices', desc: 'Nasdaq 100' },
+    GER40: { base: 19950, vol: 18, digits: 1, contract: 1, q: 'EUR', cat: 'Indices', desc: 'Germany 40 (DAX)' },
+    UK100: { base: 8250, vol: 7, digits: 1, contract: 1, q: 'GBP', cat: 'Indices', desc: 'UK 100 (FTSE)' },
+    JP225: { base: 38600, vol: 45, digits: 0, contract: 1, q: 'JPY', cat: 'Indices', desc: 'Japan 225 (Nikkei)' },
+    // Crypto
+    BTCUSD: { base: 96500, vol: 210, digits: 2, contract: 1, q: 'USD', cat: 'Crypto', desc: 'Bitcoin' },
+    ETHUSD: { base: 3450, vol: 14, digits: 2, contract: 1, q: 'USD', cat: 'Crypto', desc: 'Ethereum' },
   };
+  // How to turn the quote currency into USD using the live paper prices
+  const USD_RATE = { EUR: ['EURUSD', 1], GBP: ['GBPUSD', 1], AUD: ['AUDUSD', 1], NZD: ['NZDUSD', 1], JPY: ['USDJPY', -1], CHF: ['USDCHF', -1], CAD: ['USDCAD', -1] };
   const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
 
   /* ---------------- Demo / paper broker ---------------- */
@@ -73,9 +103,15 @@
     }
     _spread(sym) { return SPECS[sym].vol * .15; }
     _mark(p) { const mid = this.series[p.symbol].at(-1).close, sp = this._spread(p.symbol) / 2; return p.type === 'POSITION_TYPE_BUY' ? mid - sp : mid + sp; }
+    _usdPerQuote(q) {
+      if (q === 'USD') return 1;
+      const r = USD_RATE[q]; if (!r) return 1;
+      const px = this.series[r[0]]?.at(-1).close || SPECS[r[0]].base;
+      return r[1] > 0 ? px : 1 / px;
+    }
     _pnl(p, px) {
       const sp = SPECS[p.symbol]; const diff = (p.type === 'POSITION_TYPE_BUY' ? px - p.openPrice : p.openPrice - px);
-      let v = diff * p.volume * sp.contract; if (!sp.quoteUsd) v /= px; return v;
+      return diff * p.volume * sp.contract * this._usdPerQuote(sp.q);
     }
     _close(p, px, reason = 'Manual') {
       const profit = this._pnl(p, px); this.balance += profit;
@@ -96,13 +132,18 @@
     async connect() { return true; }
     async getAccount() {
       const floating = this.positions.reduce((s, p) => s + this._pnl(p, this._mark(p)), 0);
-      const margin = this.positions.reduce((s, p) => s + p.volume * SPECS[p.symbol].contract * p.openPrice / (SPECS[p.symbol].quoteUsd ? 1 : p.openPrice) / 100, 0);
+      const margin = this.positions.reduce((s, p) => s + p.volume * SPECS[p.symbol].contract * p.openPrice * this._usdPerQuote(SPECS[p.symbol].q) / 100, 0);
       return { name: 'Paper Trading', server: 'Tradebot-Demo', currency: 'USD', leverage: 100, balance: this.balance, equity: this.balance + floating, margin, freeMargin: this.balance + floating - margin, platform: 'mt5 (simulated)' };
     }
     async getPositions() { return this.positions.map(p => { const px = this._mark(p); return { ...p, currentPrice: px, profit: this._pnl(p, px) }; }); }
     async getHistory() { return this.deals; }
     async getSymbols() { return Object.keys(SPECS); }
-    async getSpec(sym) { const s = SPECS[sym]; return { symbol: sym, digits: s.digits, contractSize: s.contract, minVolume: .01, maxVolume: 50, volumeStep: .01 }; }
+    async getSpec(sym) {
+      const s = SPECS[sym], tickSize = Math.pow(10, -s.digits);
+      return { symbol: sym, digits: s.digits, contractSize: s.contract, minVolume: .01, maxVolume: 50, volumeStep: .01,
+        currencyProfit: s.q, tickSize, tickValue: s.contract * tickSize * this._usdPerQuote(s.q), category: s.cat, description: s.desc };
+    }
+    async getCatalog() { return Object.entries(SPECS).map(([name, s]) => ({ name, cat: s.cat, desc: s.desc })); }
     async getPrice(sym) { const m = this.series[sym].at(-1).close, sp = this._spread(sym) / 2; return { bid: m - sp, ask: m + sp }; }
     async getCandles(sym, tf = '15m', limit = 200) { return this.series[sym].slice(-limit).map(c => ({ ...c })); }
     async trade({ symbol, side, volume, stopLoss, takeProfit, comment }) {
@@ -168,6 +209,7 @@
       return (deals || []).filter(d => d.entryType === 'DEAL_ENTRY_OUT').map(d => ({ id: d.positionId, symbol: d.symbol, type: d.type === 'DEAL_TYPE_SELL' ? 'POSITION_TYPE_BUY' : 'POSITION_TYPE_SELL', volume: d.volume, closePrice: d.price, profit: (d.profit || 0) + (d.commission || 0) + (d.swap || 0), time: new Date(d.time).getTime(), comment: d.comment })).sort((a, b) => b.time - a.time);
     }
     async getSymbols() { return this._req(`${this.client}/symbols`); }
+    async getCatalog() { return (await this.getSymbols()).map(name => ({ name })); }
     async getSpec(sym) {
       if (!this.specCache[sym]) this.specCache[sym] = await this._req(`${this.client}/symbols/${encodeURIComponent(sym)}/specification`);
       const s = this.specCache[sym]; return { symbol: sym, digits: s.digits, contractSize: s.contractSize, minVolume: s.minVolume, maxVolume: s.maxVolume, volumeStep: s.volumeStep };
@@ -217,6 +259,10 @@
     async getPositions() { return this._req('/positions'); }
     async getHistory() { return this._req('/history?days=30'); }
     async getSymbols() { return this._req('/symbols'); }
+    async getCatalog() {
+      try { return await this._req('/symbols/catalog'); }                       // bridge ≥ 1.2: names + MT5 paths
+      catch { return (await this.getSymbols()).map(name => ({ name })); }          // older bridge: names only
+    }
     async getSpec(sym) { return this.specCache[sym] ||= await this._req(`/symbols/${encodeURIComponent(sym)}/spec`); }
     async getPrice(sym) { return this._req(`/symbols/${encodeURIComponent(sym)}/price`); }
     async getCandles(sym, tf = '15m', limit = 200) { return this._req(`/symbols/${encodeURIComponent(sym)}/candles?timeframe=${tf}&limit=${limit}`); }

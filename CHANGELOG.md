@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.0] - 2026-11-25
+### Added
+- **Markets: full symbol lists with categories and search.**
+  - With MT5 connected, Markets shows your broker's whole symbol list, grouped by MT5's own folders (Forex, Metals, Energy, Indices, Crypto, Stocks), with descriptions.
+  - Filter chips show counts. There is a ⭐ Watchlist tab, search by name or description (e.g. "gold", "JPY", "oil"), and *Show more* paging.
+  - Only rows on screen are analysed, so lists of hundreds stay fast.
+  - A ⭐ on each row adds or removes the symbol from the bot's watch list.
+- **Paper trading now has 28 symbols:** 7 forex majors, 7 crosses (EURGBP, EURJPY, GBPJPY, AUDJPY, EURAUD, EURCHF, CADJPY), metals (gold, silver, platinum), energy (WTI, Brent, natural gas), indices (US30, US500, NAS100, GER40, UK100, JP225) and crypto (BTC, ETH). P/L converts correctly from each symbol's quote currency (GBP, JPY, EUR, CHF, CAD, AUD) to USD.
+
+### Changed
+- Lot sizing and Fixed $ targets use MT5's exact **tick value per lot** when the broker provides it, so they're correct for crosses, metals, oil and indices. They fall back to contract size and quote-currency conversion otherwise.
+- The Auto-Trade symbol chips show your watch list first.
+
+### Bridge 1.2.0
+- New `GET /symbols/catalog` (names, MT5 folder paths, descriptions); `spec` adds `tickSize`, `tickValue`, `path`, `description`. Re-run `install.ps1` on the VPS to update. Older bridges still work, with categories inferred from symbol names.
+
 ## [1.6.3] - 2026-11-25
 ### Changed
 - **Smoother page swiping.**

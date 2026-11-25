@@ -451,16 +451,40 @@
   }
 
   /* ---------- Markets ---------- */
+  /* Markets: category filters, search, watch-list stars; only the rows on screen are analysed. */
   function viewMarkets(v) {
-    const syms = S.allSymbols || watch();
+    const m = S.mkt ||= { cat: 'All', q: '', limit: 30 };
+    const cat = S.catalog || watch().map(name => ({ name, cat: categorize(name), desc: '' }));
+    const counts = {}; cat.forEach(r => counts[r.cat] = (counts[r.cat] || 0) + 1);
+    const tabs = ['Watchlist', 'All', ...CATS.filter(c => counts[c])];
+    const q = m.q.trim().toUpperCase();
+    let list = m.cat === 'Watchlist' ? cat.filter(r => S.bot.symbols.includes(r.name)) : m.cat === 'All' ? cat : cat.filter(r => r.cat === m.cat);
+    if (q) list = list.filter(r => r.name.toUpperCase().includes(q) || r.desc.toUpperCase().includes(q));
+    const shown = list.slice(0, m.limit);
+    const before = (S.marketVisible || []).join();
+    S.marketVisible = shown.map(r => r.name);
     paint(v, `<div class="screen">${topbar('Markets')}
-      <div class="card"><div class="sub">Sentiment combines trend (EMA 20/50), RSI momentum, MACD, rate of change, candle flow, mean-reversion${S.newsKey ? ' and live news' : ''}. Tap a symbol for details and manual trades.</div></div>
-      <div class="card">${syms.map(s => { const a = S.analysis[s]; return `<div class="list-item" data-sym="${s}" data-key="${s}" style="cursor:pointer">
-        <div class="avatar">${s.slice(0, 3)}</div><div class="grow"><div class="title">${s}</div><div class="sub">${a ? `${Engine.REGIME_LABEL[a.regime]} · RSI ${fmt(a.rsi, 0)} · conf ${a.confidence}%` : 'Analysing…'}</div></div>
-        <div class="right"><div class="mono title">${a ? px(s, a.price) : '—'}</div>${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '▲' : a.score < 0 ? '▼' : '•'} ${a.label}</span>` : ''}</div></div>`; }).join('')}</div>
+      <input class="input" id="mktq" type="search" placeholder="Search ${cat.length} symbols (e.g. gold, JPY, oil)" value="${esc(m.q)}" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <div class="tabs-mini cats" id="mcats">${tabs.map(c => `<button data-c="${c}" class="${m.cat === c ? 'on' : ''}">${c === 'Watchlist' ? '⭐ Watchlist' : c === 'All' ? 'All' : CAT_ICON[c] + ' ' + c}<span>${c === 'Watchlist' ? S.bot.symbols.length : c === 'All' ? cat.length : counts[c]}</span></button>`).join('')}</div>
+      <div class="card" style="padding:6px 14px">${shown.map(r => { const s = r.name, a = S.analysis[s], on = S.bot.symbols.includes(s); return `<div class="list-item mrow" data-sym="${esc(s)}" data-key="${esc(s)}">
+        <button class="star ${on ? 'on' : ''}" data-star="${esc(s)}" aria-label="${on ? 'Remove from' : 'Add to'} watch list">${on ? '★' : '☆'}</button>
+        <div class="grow"><div class="title">${esc(s)} <span class="sub">${CAT_ICON[r.cat] || ''} ${esc(r.desc)}</span></div><div class="sub">${a ? `${Engine.REGIME_LABEL[a.regime]} · RSI ${fmt(a.rsi, 0)} · conf ${a.confidence}%` : 'Analysing…'}</div></div>
+        <div class="right"><div class="mono title">${a ? px(s, a.price) : '—'}</div>${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '▲' : a.score < 0 ? '▼' : '•'} ${a.label}</span>` : ''}</div></div>`; }).join('') || `<div class="empty">${m.cat === 'Watchlist' ? 'Your watch list is empty. Tap ☆ on any symbol to add it.' : 'No symbols match.'}</div>`}
+        ${list.length > shown.length ? `<button class="btn ghost" id="mmore" style="margin:10px 0">Show more (${list.length - shown.length})</button>` : ''}</div>
+      <p class="hint" style="text-align:center">⭐ symbols are on the bot's watch list. Sentiment uses trend, RSI, MACD, rate of change, candle flow and mean reversion${S.newsKey ? ' plus live news' : ''}.</p>
     </div>`, 'markets');
     bindTop();
-    $$('[data-sym]').forEach(r => r.onclick = () => openSymbol(r.dataset.sym));
+    const qi = $('#mktq'); qi.oninput = () => { m.q = qi.value; m.limit = 30; viewMarkets(v); clearTimeout(S._mktT); S._mktT = setTimeout(analyseAll, 400); };
+    $$('#mcats button').forEach(b => b.onclick = () => { m.cat = b.dataset.c; m.limit = 30; viewMarkets(v); analyseAll(); });
+    const more = $('#mmore'); if (more) more.onclick = () => { m.limit += 30; viewMarkets(v); analyseAll(); };
+    $$('[data-star]').forEach(b => b.onclick = e => {
+      e.stopPropagation(); const s = b.dataset.star;
+      if (S.bot.symbols.includes(s)) { S.bot.symbols = S.bot.symbols.filter(x => x !== s); toast(`${s} removed from watch list`); }
+      else { S.bot.symbols = [...S.bot.symbols, s]; toast(`⭐ ${s} added to watch list`); }
+      save(); viewMarkets(v);
+    });
+    $$('.mrow').forEach(r => r.onclick = () => openSymbol(r.dataset.sym));
+    if (S.marketVisible.join() !== before && !S._mktPending) { S._mktPending = true; setTimeout(() => { S._mktPending = false; analyseAll(); }, 250); }
   }
 
   function openSymbol(sym) {
@@ -525,7 +549,7 @@
       <div id="botsettings" class="${S.settingsUnlocked ? '' : 'locked'}">
       <h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div>
       <h3>Risk profile</h3><div class="seg" id="preset">${Object.entries(RISK_PRESETS).map(([k, p]) => `<button data-k="${k}" class="${b.profile === k ? 'on' : ''}">${p.label}</button>`).join('')}</div>
-      <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${all.slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
+      <h3>Symbols</h3><div class="tabs-mini" style="flex-wrap:wrap" id="syms">${[...new Set([...b.symbols, ...all])].slice(0, 40).map(s => `<button data-s="${s}" class="${b.symbols.includes(s) ? 'on' : ''}">${s}</button>`).join('')}</div>
       <h3>Strategy settings</h3><div class="card">
         <div class="field"><label>Timeframe</label><div class="seg" id="tf">${['5m', '15m', '1h', '4h'].map(t => `<button data-t="${t}" class="${b.timeframe === t ? 'on' : ''}">${t}</button>`).join('')}</div></div>
         ${slider('threshold', 'Entry sentiment threshold', 15, 80, 1, '±')}
@@ -956,6 +980,32 @@
   }
 
   /* ================= DATA + AUTO-TRADER ================= */
+  /* Symbol catalogue with categories (MT5 folder path when available, otherwise name rules). */
+  const CATS = ['Forex', 'Metals', 'Energy', 'Indices', 'Crypto', 'Stocks', 'Other'];
+  const CAT_ICON = { Forex: '💱', Metals: '🥇', Energy: '🛢️', Indices: '📊', Crypto: '₿', Stocks: '🏢', Other: '•' };
+  function categorize(name, path = '') {
+    const p = path.toLowerCase(), n = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (p) {
+      if (/forex|fx|currenc/.test(p)) return 'Forex';
+      if (/metal|gold|silver|precious/.test(p)) return 'Metals';
+      if (/energ|oil|gas|commod/.test(p)) return /gold|silver|metal/.test(p) ? 'Metals' : 'Energy';
+      if (/indic|index|cash|cfd ind/.test(p)) return 'Indices';
+      if (/crypto|coin/.test(p)) return 'Crypto';
+      if (/stock|share|equit/.test(p)) return 'Stocks';
+    }
+    if (/^(XAU|XAG|XPT|XPD|GOLD|SILVER|PLATINUM|PALLADIUM|COPPER)/.test(n)) return 'Metals';
+    if (/(OIL|WTI|BRENT|NGAS|NATGAS|GASOLINE)/.test(n)) return 'Energy';
+    if (/^(BTC|ETH|LTC|XRP|ADA|SOL|DOGE|DOT|BCH|BNB)/.test(n)) return 'Crypto';
+    if (/^(US30|US500|USTEC|NAS|SPX|SP500|DJ|GER|DE40|DAX|UK100|FTSE|JP225|NIKKEI|FRA40|EU50|STOXX|AUS200|HK50|CHINA|US2000)/.test(n)) return 'Indices';
+    if (/^(USD|EUR|GBP|JPY|AUD|NZD|CAD|CHF|SGD|HKD|NOK|SEK|DKK|ZAR|MXN|TRY|PLN|CNH|HUF|CZK)(USD|EUR|GBP|JPY|AUD|NZD|CAD|CHF|SGD|HKD|NOK|SEK|DKK|ZAR|MXN|TRY|PLN|CNH|HUF|CZK)/.test(n)) return 'Forex';
+    return 'Other';
+  }
+  async function loadCatalog() {
+    let rows = [];
+    try { rows = await S.broker.getCatalog(); } catch { rows = (await S.broker.getSymbols()).map(name => ({ name })); }
+    S.catalog = rows.map(r => ({ name: r.name, desc: r.desc || '', cat: r.cat || categorize(r.name, r.path) }));
+    S.allSymbols = S.catalog.map(r => r.name);
+  }
   /* Brokers name symbols differently (EURUSD., EURUSD#, GOLD…). Map the watch list onto the broker's names. */
   const SYMBOL_ALIASES = { XAUUSD: ['GOLD'], XAGUSD: ['SILVER'], US30: ['US30CASH', 'DJ30', 'WS30', 'DOWJONES'], BTCUSD: ['BITCOIN', 'BTCUSDT'] };
   function mapWatchSymbols() {
@@ -969,6 +1019,9 @@
     if (mapped.join(', ') !== before) log(`Watch list matched to your broker's symbols: ${mapped.join(', ')}`);
     save();
   }
+  /* $ gained per 1.0 price move for 1 lot. Exact from MT5's tick value when the broker provides it
+     (works for FX crosses, metals, oil, indices…); otherwise contract size with a quote-currency estimate. */
+  const valuePerUnit = (sym, spec, price) => spec.tickValue > 0 && spec.tickSize > 0 ? spec.tickValue / spec.tickSize : (spec.contractSize || 1) / quoteConv(sym, spec, price);
   /* Profit-currency conversion: 1 when P/L is already in USD, price when the quote currency isn't (e.g. USDJPY). */
   const quoteConv = (sym, spec, price) => {
     if (spec?.currencyProfit) return spec.currencyProfit === 'USD' ? 1 : (/^USD/i.test(sym) ? price : 1);
@@ -984,15 +1037,15 @@
         log(`Connected to MT5 ${info.login} (${info.server}) via your VPS`, 'up');
         if (!info.tradeAllowed) { log('Algo Trading is OFF in MetaTrader 5. Turn it on, or orders will be rejected.', 'down'); toast('Turn on "Algo Trading" in MT5 on your VPS'); }
       } catch (e) { S.status = 'Error'; log('Bridge connection failed: ' + e.message, 'down'); throw e; }
-      try { S.allSymbols = (await S.broker.getSymbols()).slice(0, 300); mapWatchSymbols(); } catch { }
+      try { await loadCatalog(); mapWatchSymbols(); } catch { }
     } else if (S.conn.mode === 'mt5') {
       const token = await Security.getSecret('metaapi');
       S.broker = new Brokers.MetaApiBroker({ token, accountId: S.conn.accountId, region: S.conn.region });
       try { await S.broker.connect(onStatus); S.conn.region = S.broker.region; save(); S.status = 'Connected'; log('Connected to MT5 account', 'up'); }
       catch (e) { S.status = 'Error'; log('MT5 connection failed: ' + e.message, 'down'); throw e; }
-      try { const syms = await S.broker.getSymbols(); S.allSymbols = Array.isArray(syms) ? syms.slice(0, 300) : null; mapWatchSymbols(); } catch { }
+      try { await loadCatalog(); mapWatchSymbols(); } catch { }
     } else {
-      S.broker = new Brokers.DemoBroker(store); S.allSymbols = Object.keys(Brokers.SPECS); S.status = 'Connected';
+      S.broker = new Brokers.DemoBroker(store); S.status = 'Connected'; await loadCatalog();
       S.broker.onEvent = ev => { if (ev.type === 'closed' && ev.deal.reason !== 'Manual') log(`${ev.deal.reason} hit on ${ev.deal.symbol}: ${signed(ev.deal.profit)}`, cls(ev.deal.profit)); };
     }
     S.pollMs = isLive() ? 5000 : 2000;
@@ -1028,7 +1081,7 @@
 
   async function analyseAll() {
     if (!S.broker) return;
-    const syms = [...new Set([...watch(), ...(S.tab === 'markets' ? (S.allSymbols || []).slice(0, 12) : [])])];
+    const syms = [...new Set([...watch(), ...(S.tab === 'markets' ? (S.marketVisible || []).slice(0, 30) : [])])];
     await Promise.all(syms.map(async s => {
       try {
         const c = await S.broker.getCandles(s, S.bot.timeframe, 200); S.candleCache[s] = c;
@@ -1043,7 +1096,7 @@
 
   function lotFor(sym, a, spec, slMult = S.bot.slAtr, riskMult = 1) {
     const eq = S.account.equity, risk = eq * S.bot.riskPct / 100 * riskMult, slDist = a.atr * slMult;
-    const perLot = slDist * spec.contractSize / quoteConv(sym, spec, a.price);
+    const perLot = slDist * valuePerUnit(sym, spec, a.price);
     let vol = risk / (perLot || 1e9);
     const step = spec.volumeStep || .01; vol = Math.floor(vol / step) * step;
     return +Math.min(Math.max(vol, spec.minVolume || .01), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
@@ -1051,11 +1104,10 @@
   /* Fixed-$ mode: choose a lot so the take-profit sits ~tpAtr × ATR away, then derive exact price
      distances from that (rounded) lot so profit at TP = tpUsd and loss at SL = slUsd. */
   function usdPlan(sym, a, spec, tpAtr = S.bot.tpAtr, lotOverride) {
-    const cs = spec.contractSize || 1, step = spec.volumeStep || .01, minV = spec.minVolume || .01;
-    const conv = quoteConv(sym, spec, a.price);
-    let lot = lotOverride || Math.round(S.bot.tpUsd * conv / (tpAtr * a.atr * cs) / step) * step;
+    const vpu = valuePerUnit(sym, spec, a.price), step = spec.volumeStep || .01, minV = spec.minVolume || .01;
+    let lot = lotOverride || Math.round(S.bot.tpUsd / (tpAtr * a.atr * vpu) / step) * step;
     lot = +Math.min(Math.max(lot, minV), spec.maxVolume || 100, lotOverride ? Infinity : S.bot.maxLot).toFixed(2);
-    return { lot, tpDist: S.bot.tpUsd * conv / (lot * cs), slDist: S.bot.slUsd * conv / (lot * cs) };
+    return { lot, tpDist: S.bot.tpUsd / (lot * vpu), slDist: S.bot.slUsd / (lot * vpu) };
   }
   /* Would the fixed-$ target sit too close to the price at this lot? Also returns the lot that fits. */
   async function usdFit(sym, volume) {

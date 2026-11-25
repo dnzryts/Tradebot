@@ -30,7 +30,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 BOT_MAGIC = 20261124          # magic number stamped on Tradebot's own orders
 HERE = Path(__file__).resolve().parent
 CONFIG = json.loads((HERE / "config.json").read_text(encoding="utf-8")) if (HERE / "config.json").exists() else {}
@@ -177,13 +177,26 @@ def symbols():
     return visible + [s.name for s in allsyms if not s.visible]
 
 
+@app.get("/symbols/catalog", dependencies=[Depends(auth)])
+@mt5_call
+def catalog():
+    """All broker symbols with MT5's folder path (e.g. 'Forex\\Majors\\EURUSD') and description."""
+    allsyms = mt5.symbols_get() or []
+    rows = [{"name": s.name, "path": s.path, "desc": s.description, "visible": bool(s.visible)} for s in allsyms]
+    rows.sort(key=lambda r: (not r["visible"], r["path"]))
+    return rows
+
+
 @app.get("/symbols/{symbol}/spec", dependencies=[Depends(auth)])
 @mt5_call
 def spec(symbol: str):
     s = select_symbol(symbol)
     return {"symbol": symbol, "digits": s.digits, "contractSize": s.trade_contract_size, "minVolume": s.volume_min,
             "maxVolume": s.volume_max, "volumeStep": s.volume_step, "point": s.point,
-            "stopsLevel": s.trade_stops_level, "currencyProfit": s.currency_profit}
+            "stopsLevel": s.trade_stops_level, "currencyProfit": s.currency_profit,
+            # value of one tick for 1 lot, already in the account currency: exact P/L sizing for every symbol type
+            "tickSize": s.trade_tick_size, "tickValue": s.trade_tick_value,
+            "description": s.description, "path": s.path}
 
 
 @app.get("/symbols/{symbol}/price", dependencies=[Depends(auth)])
