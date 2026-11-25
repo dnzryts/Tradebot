@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.11.0] - 2026-11-25
+### Added
+- **Trade detail chart.** Tap any open trade, in Portfolio → Open positions or on a Dashboard live-trade card, to open its chart.
+  - Candles with lines for **take-profit**, **entry** and **stop-loss**, each labelled with the projected P/L at that price, plus the live price.
+  - A levels table: price, distance from the current price (in pips for forex) and **P/L if the price gets there**.
+  - **To target** (% of the way to take-profit), **reward : risk**, and the current result in R (multiples of the amount risked).
+  - **Protect profits** status: the profit level where trailing starts, or how much the trailing stop has already locked in. A locked stop is drawn in green as "Stop 🔒".
+  - Buttons to close the trade or open the symbol's analysis and order panel.
+  - The sheet updates live, and closes itself with a note when the trade closes.
+- Open-position rows show a › and trade cards show "Chart ›" to make them recognisable as tappable.
+
 ## [1.10.0] - 2026-11-25
 ### Added
 - **Protect profits (trailing stop)**, on in all tested presets. Once a bot trade is in profit by the amount it risks (1 R), its stop-loss follows the price 1 R behind, so a trade that runs up and then reverses still closes in profit. The stop only ever moves in the trade's favour. The take-profit stays where it was.

@@ -410,6 +410,7 @@
     if (S.tab === 'bot') { const st = $('#botstat'); if (st) { paint(st, botStatusHtml(), 'bot'); const t = $('#bottoggle'); t.checked = S.bot.enabled; t.onchange = e => toggleBot(e.target.checked); bindPositions(st); }
       const rd = $('#radar'); if (rd) paint(rd, radarHtml(), 'radar'); }
     const sh = $('#symsheet'); if (sh) symbolSheetUpdate();
+    if ($('#tradesheet')) tradeSheetUpdate();
     const cl = $('#closelist'); if (cl) paint(cl, closeRowsHtml(), 'close');
   }
 
@@ -537,12 +538,12 @@
       bar = `<div class="tbar"><i class="tfill ${cur >= ent ? 'up' : 'down'}" style="left:${Math.min(cur, ent) * 100}%;width:${Math.abs(cur - ent) * 100}%"></i><i class="tentry" style="left:${ent * 100}%"></i><i class="tnow" style="left:${cur * 100}%"></i></div>
         <div class="row between tlbl"><span class="down">SL ${px(p.symbol, p.stopLoss)}</span><span class="up">TP ${px(p.symbol, p.takeProfit)}</span></div>`;
     } else bar = `<div class="tlbl sub" style="margin-top:10px">No SL/TP set</div>`;
-    return `<div class="tcard ${cls(p.profit)}" data-key="t${p.id}">
+    return `<div class="tcard ${cls(p.profit)}" data-key="t${p.id}" data-trade="${p.id}">
       <div class="row between"><div class="row" style="gap:8px"><span class="side ${buy ? 'up' : 'down'}">${buy ? 'BUY' : 'SELL'}</span><b>${p.symbol}</b></div><span class="sub">${bot ? st.icon + ' ' + st.label : '✋ Manual'}</span></div>
       <div class="tpl mono ${cls(p.profit)}">${signed(p.profit)}</div>
       <div class="sub mono">${fmt(p.volume)} lot · ${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div>
       ${bar}
-      <div class="row between" style="margin-top:10px"><span class="sub">⏱ ${age(p.time)}</span><button class="tclose" data-close="${p.id}">Close</button></div>
+      <div class="row between" style="margin-top:10px"><span class="sub">⏱ ${age(p.time)} · <span class="linkbtn">Chart ›</span></span><button class="tclose" data-close="${p.id}">Close</button></div>
     </div>`;
   }
   function liveTradesHtml() {
@@ -626,6 +627,68 @@
     if (S.marketVisible.join() !== before && !S._mktPending) { S._mktPending = true; setTimeout(() => { S._mktPending = false; analyseAll(); }, 250); }
   }
 
+  /* ---------- Trade detail: chart with entry / SL / TP and projected P/L ---------- */
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-trade]'); if (!t || e.target.closest('[data-close],[data-closeall],button:not(.linkbtn)')) return;
+    if (Date.now() - (S._slideAt || 0) < 450) return;            // finger was swiping, not tapping
+    openTrade(t.dataset.trade);
+  });
+  async function openTrade(id) {
+    const p = S.positions.find(x => String(x.id) === String(id)); if (!p) return;
+    $('#tradesheet')?.remove(); S.tradeId = String(id);
+    const bg = sheet('<div id="tradebody"></div>', null, 'tradesheet');
+    tradeSheetUpdate();
+    S.specs ||= {};
+    try {
+      if (!S.specs[p.symbol]) S.specs[p.symbol] = await S.broker.getSpec(p.symbol);
+      if (!S.candleCache[p.symbol]) S.candleCache[p.symbol] = await S.broker.getCandles(p.symbol, S.bot.timeframe, 200);
+    } catch { }
+    if (document.body.contains(bg)) tradeSheetUpdate();
+  }
+  function tradeSheetUpdate() {
+    const body = $('#tradebody'); if (!body) return;
+    const p = S.positions.find(x => String(x.id) === S.tradeId);
+    if (!p) { paint(body, '<div class="empty" style="padding:30px 0">This trade has closed. See Portfolio → Closed trades.</div>', 'trade-closed'); setTimeout(() => { const bg = $('#tradesheet'); if (bg) closeSheet(bg); }, 1800); return; }
+    const sym = p.symbol, dir = p.type === 'POSITION_TYPE_BUY' ? 1 : -1, buy = dir > 0, bot = isBot(p), st = bot ? Engine.STRATEGIES[stratOf(p)] : null;
+    const spec = S.specs?.[sym], cur = p.currentPrice, diff = (cur - p.openPrice) * dir;
+    // $ per 1.0 price move for this position: from the broker spec, else from the live P/L
+    const perUnit = spec ? valuePerUnit(sym, spec, cur) * p.volume : Math.abs(diff) > 1e-12 ? p.profit / diff : null;
+    const at = price => perUnit == null ? null : (price - p.openPrice) * dir * perUnit;
+    const dg = spec?.digits ?? digits(sym), fx = categorize(sym) === 'Forex' && (dg === 5 || dg === 3);
+    const dist = price => { const d = Math.abs(price - cur); return fx ? `${fmt(d * 10 ** (dg - 1), 1)} pips` : px(sym, d); };
+    const tpUsd = p.takeProfit ? at(p.takeProfit) : null, slUsd = p.stopLoss ? at(p.stopLoss) : null;
+    const meta = S.posMeta?.[p.id], riskUsd = meta?.r && perUnit != null ? meta.r * perUnit : slUsd != null && slUsd < 0 ? -slUsd : null;
+    const locked = slUsd != null && slUsd >= 0;
+    const prog = p.takeProfit ? clamp01((cur - p.openPrice) / (p.takeProfit - p.openPrice)) : null;
+    let trail = '';
+    if (bot && S.bot.trailing && riskUsd) trail = locked ? `🔒 Protect profits is active: the stop now locks in <b class="up">${signed(slUsd)}</b> and rises with the price.`
+      : `🔒 Protect profits starts at <b>${signed(riskUsd * TRAIL_R)}</b>: from there the stop follows the price to lock in profit.`;
+    const row = (lbl, cls2, price, usd, note) => `<div class="lvl"><span class="lvlname ${cls2}">${lbl}</span><span class="mono">${price != null ? px(sym, price) : '—'}</span><span class="sub mono">${note || ''}</span><b class="mono ${usd == null ? '' : cls(usd)}">${usd == null ? '—' : signed(usd)}</b></div>`;
+    paint(body, `<div class="row between"><div class="row" style="gap:8px"><span class="side ${buy ? 'up' : 'down'}">${buy ? 'BUY' : 'SELL'}</span><h2 style="margin:0">${sym}</h2></div><span class="sub">${bot ? st.icon + ' ' + st.label : '✋ Manual'} · ⏱ ${age(p.time)}</span></div>
+      <div class="row between" style="margin-top:6px"><div class="tpl mono ${cls(p.profit)}" style="margin:0">${signed(p.profit)}</div><span class="sub mono">${fmt(p.volume)} lot</span></div>
+      <div class="chart-box" style="margin:10px 0"><canvas id="tradechart" height="250"></canvas></div>
+      <div class="card lvls" style="background:var(--card2)">
+        <div class="lvl head"><span>Level</span><span>Price</span><span>From now</span><span>P/L there</span></div>
+        ${row('🎯 Take-profit', 'up', p.takeProfit, tpUsd, p.takeProfit ? dist(p.takeProfit) : 'not set')}
+        ${row('● Now', '', cur, p.profit, '')}
+        ${row('▶ Entry', 'muted', p.openPrice, 0, dist(p.openPrice))}
+        ${row(locked ? '🔒 Stop (locked)' : '🛑 Stop-loss', locked ? 'up' : 'down', p.stopLoss, slUsd, p.stopLoss ? dist(p.stopLoss) : 'not set')}
+      </div>
+      <div class="grid3" style="margin-top:10px">
+        <div class="stat"><div class="lbl">To target</div><div class="val">${prog == null ? '—' : Math.round(prog * 100) + '%'}</div></div>
+        <div class="stat"><div class="lbl">Reward : risk</div><div class="val">${tpUsd != null && riskUsd ? fmt(tpUsd / riskUsd, 1) + ' : 1' : '—'}</div></div>
+        <div class="stat"><div class="lbl">Now in R</div><div class="val mono ${cls(p.profit)}">${riskUsd ? (p.profit >= 0 ? '+' : '') + fmt(p.profit / riskUsd, 2) + 'R' : '—'}</div></div></div>
+      ${trail ? `<p class="hint" style="margin-top:10px">${trail}</p>` : ''}
+      <p class="hint">P/L at each level is projected from the current price and lot size. Spread, commission and swap are not included${p.swap ? ` (swap so far ${signed(p.swap)})` : ''}.</p>
+      <div class="grid2" style="margin-top:6px"><button class="btn ghost" id="tsym">Analysis & new order</button><button class="btn danger" data-close="${p.id}">Close trade</button></div>`, 'trade:' + p.id);
+    bindPositions(body);
+    const ts = $('#tsym', body); if (ts) ts.onclick = () => { closeSheet($('#tradesheet')); setTimeout(() => openSymbol(sym), 260); };
+    const lv = [];
+    if (p.takeProfit) lv.push({ price: p.takeProfit, label: `TP ${tpUsd != null ? signed(tpUsd) : ''}`, color: '--up', dash: true });
+    lv.push({ price: p.openPrice, label: 'Entry', color: '--muted' });
+    if (p.stopLoss) lv.push({ price: p.stopLoss, label: `${locked ? 'Stop 🔒' : 'SL'} ${slUsd != null ? signed(slUsd) : ''}`, color: locked ? '--up' : '--down', dash: true });
+    drawChart($('#tradechart', body), sym, lv);
+  }
   function openSymbol(sym) {
     S.focus = sym;
     const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'symsheet';
@@ -888,8 +951,8 @@
   }
   function positionsHtml(list) {
     if (!list.length) return '<div class="empty">No open positions</div>';
-    return list.map(p => `<div class="list-item" data-key="p${p.id}"><div class="avatar ${p.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
-      <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${isBot(p) ? ' · 🤖' : ''}</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
+    return list.map(p => `<div class="list-item tappable" data-key="p${p.id}" data-trade="${p.id}"><div class="avatar ${p.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
+      <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${isBot(p) ? ' · 🤖' : ''}</span> <span class="chev">›</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
       <div class="right"><div class="mono title ${cls(p.profit)}">${signed(p.profit)}</div><button class="sub" data-close="${p.id}" style="color:var(--accent);font-weight:700">Close</button></div></div>`).join('');
   }
   const posHeader = t => `<div class="section-head"><h3>${t}</h3>${S.positions.length ? `<button class="closeall-pill" data-closeall>${icon('x')}Close all</button>` : ''}</div>`;
@@ -1181,21 +1244,32 @@
     const x = c.getContext('2d'); x.setTransform(d, 0, 0, d, 0, 0); return [x, W, H];
   }
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  async function drawChart(c, sym) {
+  async function drawChart(c, sym, levels = []) {
     if (!c || !S.broker) return;
     let candles = S.candleCache[sym]; if (!candles) return;
     candles = candles.slice(-70);
     const [x, w, h] = setupCanvas(c); const pad = { l: 4, r: 54, t: 8, b: 16 };
-    const hi = Math.max(...candles.map(k => k.high)), lo = Math.min(...candles.map(k => k.low)), rng = hi - lo || 1;
+    let hi = Math.max(...candles.map(k => k.high), ...levels.map(l => l.price)), lo = Math.min(...candles.map(k => k.low), ...levels.map(l => l.price));
+    if (levels.length) { const m = (hi - lo) * .04; hi += m; lo -= m; }
+    const rng = hi - lo || 1;
     const Y = v => pad.t + (hi - v) / rng * (h - pad.t - pad.b), cw = (w - pad.l - pad.r) / candles.length;
     x.strokeStyle = css('--line'); x.fillStyle = css('--muted'); x.font = '10px system-ui'; x.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) { const v = lo + rng * i / 4, y = Y(v); x.beginPath(); x.moveTo(pad.l, y); x.lineTo(w - pad.r, y); x.stroke(); x.fillText(px(sym, v), w - pad.r + 4, y + 3); }
+    const tags = [candles.at(-1).close, ...levels.map(l => l.price)].map(Y);
+    for (let i = 0; i <= 4; i++) { const v = lo + rng * i / 4, y = Y(v); x.beginPath(); x.moveTo(pad.l, y); x.lineTo(w - pad.r, y); x.stroke(); if (!tags.some(t => Math.abs(t - y) < 14)) x.fillText(px(sym, v), w - pad.r + 4, y + 3); }
     const closesAll = S.candleCache[sym].map(k => k.close), off = closesAll.length - candles.length;
     [[Engine.ema(closesAll, 20), css('--accent')], [Engine.ema(closesAll, 50), css('--warn')]].forEach(([e, col]) => { x.strokeStyle = col; x.lineWidth = 1.5; x.beginPath(); candles.forEach((_, i) => { const X = pad.l + i * cw + cw / 2, y = Y(e[off + i]); i ? x.lineTo(X, y) : x.moveTo(X, y); }); x.stroke(); });
     candles.forEach((k, i) => { const up = k.close >= k.open, col = up ? css('--up') : css('--down'), X = pad.l + i * cw + cw / 2; x.strokeStyle = x.fillStyle = col; x.lineWidth = 1; x.beginPath(); x.moveTo(X, Y(k.high)); x.lineTo(X, Y(k.low)); x.stroke(); const bh = Math.max(1, Math.abs(Y(k.open) - Y(k.close))); x.fillRect(X - cw * .35, Math.min(Y(k.open), Y(k.close)), cw * .7, bh); });
     const last = candles.at(-1).close, ly = Y(last); x.setLineDash([3, 3]); x.strokeStyle = css('--accent'); x.beginPath(); x.moveTo(pad.l, ly); x.lineTo(w - pad.r, ly); x.stroke(); x.setLineDash([]);
     x.fillStyle = css('--accent'); x.fillRect(w - pad.r + 1, ly - 8, pad.r - 1, 16); x.fillStyle = '#fff'; x.font = 'bold 10px system-ui'; x.fillText(px(sym, last), w - pad.r + 4, ly + 3);
     x.fillStyle = css('--muted'); x.font = '10px system-ui'; x.fillText('EMA20', pad.l + 2, h - 3); x.fillStyle = css('--warn'); x.fillText('EMA50', pad.l + 44, h - 3);
+    // Trade levels: a line across the chart, a tag on the price axis and a label on the left
+    levels.forEach(l => {
+      const y = Y(l.price), col = css(l.color); x.strokeStyle = col; x.lineWidth = 1.5; x.setLineDash(l.dash ? [6, 4] : []);
+      x.beginPath(); x.moveTo(pad.l, y); x.lineTo(w - pad.r, y); x.stroke(); x.setLineDash([]);
+      x.fillStyle = col; x.fillRect(w - pad.r + 1, y - 8, pad.r - 1, 16); x.fillStyle = '#fff'; x.font = 'bold 10px system-ui'; x.fillText(px(sym, l.price), w - pad.r + 4, y + 3);
+      x.font = 'bold 10px system-ui'; const tw = x.measureText(l.label).width + 10, ty = Math.min(Math.max(y - 16, pad.t), h - pad.b - 14);
+      x.fillStyle = css('--card'); x.globalAlpha = .85; x.fillRect(pad.l + 2, ty, tw, 13); x.globalAlpha = 1; x.fillStyle = col; x.fillText(l.label, pad.l + 7, ty + 10);
+    });
   }
   function drawLine(c, pts) {
     if (!c || pts.length < 2) return; const [x, w, h] = setupCanvas(c);

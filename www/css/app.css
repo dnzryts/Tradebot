@@ -437,3 +437,14 @@ html.private #eq { display: none; }
 .gstep.done .gnum { background: var(--up); color: #fff; }
 .gstep.done .title { opacity: .7; }
 .gstep .linkbtn { margin-top: 6px; }
+
+/* Trade detail sheet */
+.tappable { cursor: pointer; }
+.chev { color: var(--muted); font-weight: 700; }
+.lvls { padding: 6px 14px; }
+.lvl { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr; gap: 6px; align-items: center; padding: 9px 0; font-size: 13px; }
+.lvl + .lvl { border-top: 1px solid var(--line); }
+.lvl.head { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 6px 0; }
+.lvl > :last-child, .lvl.head > :last-child { text-align: right; }
+.lvl .lvlname { font-weight: 700; }
+.lvl .lvlname.up { color: var(--up); } .lvl .lvlname.down { color: var(--down); } .lvl .lvlname.muted { color: var(--muted); }
