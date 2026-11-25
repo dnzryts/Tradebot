@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.1] - 2026-11-25
+### Fixed
+- **The eye button no longer reloads the screen.** Hiding or showing amounts now patches only the values in place, with the same flicker-free update as the live refresh. Scroll position, charts, open panels and animations are untouched.
+- The card-opacity preview in Profile also hides its amount.
+- Switching tabs now reliably starts the new tab at the top.
+
 ## [1.6.0] - 2026-11-25
 ### Added
 - **👁 Hide sensitive data.** An eye button in the top bar of every screen hides money amounts as `$•••••`, with no win/loss colours. This covers equity, balance, margin, every P/L (trade cards, Portfolio, dialogs, messages, activity log), your email and MT5 login, and the equity chart. Prices and lot sizes stay visible.

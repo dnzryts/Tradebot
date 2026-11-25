@@ -243,7 +243,7 @@
     if (S.tab === 'bot') S.settingsUnlocked = false;   // settings re-lock when you leave Auto-Trade
     S.tab = tab;
     $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
-    $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0);
+    $('#view').dataset.view = ''; renderView(); window.scrollTo(0, 0); document.body.scrollTop = 0;
     const scr = $('#view .screen'); if (scr) scr.classList.add(dir > 0 ? 'enter-right' : 'enter-left');
     if (tab === 'markets') analyseAll();
   }
@@ -307,13 +307,21 @@
     const e = $('#eyebtn'); if (e) e.onclick = () => setPrivacy(!S.privacy, true);
     const r = $('#ring'); if (r && !r.onclick) { r.onclick = () => { poll(); analyseAll(); }; ringCycle(); }
   };
+  const profileSub = () => `${maskEmail(S.profile.email) || 'No email'} · since ${new Date(S.profile.created).toLocaleDateString()}`;
+  const acctTitle = () => isLive() ? `MT5 · ${maskId(S.conn.login || S.conn.accountId?.slice(0, 8), 2)}` : 'Paper trading';
   /* Eye button: hide/show money amounts and account identifiers everywhere. */
   function setPrivacy(on, announce) {
     S.privacy = on;
     document.documentElement.classList.toggle('private', on);
-    if ($('#view')) { $('#view').dataset.view = ''; renderView(); }
-    const sh = $('#symsheet'); if (sh) { $('#symbody').dataset.view = ''; symbolSheetUpdate(); }
-    const cl = $('#closelist'); if (cl) paint(cl, closeRowsHtml(), 'close');
+    // Patch values in place (same mechanism as the live refresh) instead of rebuilding the screen
+    const e = $('#eyebtn');
+    if (e) { e.classList.toggle('on', on); e.innerHTML = icon(on ? 'eyeoff' : 'eye'); e.title = e.ariaLabel = on ? 'Show amounts' : 'Hide amounts'; }
+    refreshLive();                                    // Home / Markets / Portfolio, bot status, open sheets
+    const lg = $('#botlog'); if (lg) lg.innerHTML = logHtml();
+    const pid = $('#pidsub'); if (pid) pid.textContent = profileSub();
+    const pac = $('#pacct'); if (pac) pac.textContent = acctTitle();
+    const pn = $('#pnow'); if (pn) pn.checked = on;
+    const hp = $('#heropvv'); if (hp) hp.textContent = money(10000);
     if (announce) toast(on ? '🙈 Amounts hidden' : '👁 Amounts visible');
   }
   /* Circular countdown to the next refresh; spins while a refresh is in flight. */
@@ -688,17 +696,17 @@
     const p = S.profile;
     v.innerHTML = `<div class="screen">${topbar('Profile')}
       <div class="card row"><div class="avatar" style="background:${p.color};color:#fff;width:58px;height:58px;border-radius:20px;font-size:22px">${esc(p.name[0]).toUpperCase()}</div>
-        <div class="grow"><div class="title" style="font-size:18px">${esc(p.name)}</div><div class="sub">${esc(maskEmail(p.email) || 'No email')} · since ${new Date(p.created).toLocaleDateString()}</div>
+        <div class="grow"><div class="title" style="font-size:18px">${esc(p.name)}</div><div class="sub"><span id="pidsub">${esc(profileSub())}</span></div>
         <span class="chip" style="margin-top:6px">${RISK_PRESETS[p.riskProfile]?.label || 'Custom'} investor</span></div></div>
       <h3>Trading account</h3><div class="card"><div class="row between"><div class="row"><div class="avatar">${S.conn.mode === 'bridge' ? 'VPS' : isLive() ? 'MT5' : 'SIM'}</div>
-        <div><div class="title">${isLive() ? `MT5 · ${esc(maskId(S.conn.login || S.conn.accountId?.slice(0, 8), 2))}` : 'Paper trading'}</div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
+        <div><div class="title"><span id="pacct">${esc(acctTitle())}</span></div><div class="sub">${isLive() ? esc(S.conn.server || 'MT5') + ' · ' + (S.conn.mode === 'bridge' ? 'Own VPS' : 'MetaApi') + ' · ' + S.status : 'Simulated market · $10,000 start'}</div></div></div>
         <button class="btn small" id="conn">${isLive() ? 'Manage' : 'Connect MT5'}</button></div></div>
       <h3>Appearance</h3><div class="card">
         <div class="seg" id="tmode3"><button data-a="system" class="${S.theme === 'system' ? 'on' : ''}">System</button><button data-a="light" class="${S.theme === 'light' ? 'on' : ''}">Light</button><button data-a="dark" class="${S.theme !== 'system' && S.theme !== 'light' ? 'on' : ''}">Dark</button></div>
         <p class="hint" id="thint">${S.theme === 'system' ? `Following your phone: currently <b>${systemIsDark() ? 'dark' : 'light'}</b>.` : S.theme === 'light' ? 'Always light.' : 'Always dark.'}</p>
         <div class="field" style="margin:14px 0 0"><div class="row between"><label style="margin:0 0 4px 4px">Dashboard card opacity</label><b class="mono" id="heroav">${Math.round(S.heroAlpha * 100)}%</b></div>
           <input type="range" id="heroa" min="15" max="100" step="5" value="${Math.round(S.heroAlpha * 100)}">
-          <div class="hero-preview card hero ${S.heroAlpha < .7 ? 'soft' : ''}" id="heropv"><div class="row between"><span class="muted">Equity preview</span><span class="chip">PAPER</span></div><div class="mono" style="font-size:22px;font-weight:800;margin-top:4px">$10,000.00</div></div></div>
+          <div class="hero-preview card hero ${S.heroAlpha < .7 ? 'soft' : ''}" id="heropv"><div class="row between"><span class="muted">Equity preview</span><span class="chip">PAPER</span></div><div class="mono" id="heropvv" style="font-size:22px;font-weight:800;margin-top:4px">${money(10000)}</div></div></div>
       </div>
       <h3>Edit profile</h3><div class="card">
         <div class="field"><label>Display name</label><input class="input" id="pname" value="${esc(p.name)}" maxlength="24"></div>
