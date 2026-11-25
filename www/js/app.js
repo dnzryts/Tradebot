@@ -229,7 +229,7 @@
   function renderMain() {
     const tabs = [['home', 'home', 'Home'], ['markets', 'chart', 'Markets'], ['bot', 'bot', 'Auto-Trade'], ['portfolio', 'wallet', 'Portfolio'], ['profile', 'user', 'Profile']];
     app.innerHTML = `<div id="view"></div><nav class="nav"><div class="nav-inner">${tabs.map(([k, ic, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${icon(ic)}${l}</button>`).join('')}</div></nav>`;
-    $$('.nav button').forEach(b => b.onclick = () => goTab(b.dataset.tab));
+    $$('.nav button').forEach(b => b.onclick = () => { if (!S.slideTo?.(b.dataset.tab)) goTab(b.dataset.tab); });
     renderView();
   }
   /* ---------- Navigation + Android back button ----------
@@ -257,9 +257,9 @@
     const W = () => ($('#app')?.clientWidth || innerWidth);
     const canScrollX = el => el && el.scrollWidth > el.clientWidth + 2;
     const neighbour = dir => TAB_ORDER[TAB_ORDER.indexOf(S.tab) + dir];
-    function makePeek(dir) {
+    function makePeek(dir, target) {
       dropPeek();
-      const tab = neighbour(dir); if (!tab) return;
+      const tab = target || neighbour(dir); if (!tab) return;
       peek = document.createElement('div'); peek.className = 'peek'; peek.setAttribute('aria-hidden', 'true');
       document.body.appendChild(peek);
       const saveTab = S.tab; S.tab = tab;                       // render the neighbour exactly as it will look
@@ -323,12 +323,26 @@
       }
     };
     document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
+
+    /* Same side-by-side slide for bottom-bar taps and Back: target page slides in, current page slides out. */
+    S.slideTo = tab => {
+      if (settling || sx != null || tab === S.tab || !S.unlocked || !$('#view')) return false;
+      cur = $('#view .screen'); if (!cur) return false;
+      const dir = Math.sign(TAB_ORDER.indexOf(tab) - TAB_ORDER.indexOf(S.tab)) || 1;
+      $$('.nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));   // highlight the icon right away
+      settling = true; S._dragging = true; dx = 0;
+      cur.style.transition = 'none'; cur.style.willChange = 'transform';
+      makePeek(dir, tab);
+      requestAnimationFrame(() => requestAnimationFrame(() =>
+        animate(-dir * W(), 240, () => { goTab(tab, false, dir, true); dropPeek(); S._dragging = false; settling = false; })));
+      return true;
+    };
   })();
   let lastBack = 0;
   function handleBack() {
     const dlg = $$('.dlg-bg').at(-1); if (dlg && dlg._cancel) { dlg._cancel(); return; }
     const sheets = $$('.sheet-bg:not(.closing)'); if (sheets.length) { closeSheet(sheets.at(-1)); return; }
-    if (S.unlocked && $('#view') && S.tab !== 'home') return goTab('home', true, -1);
+    if (S.unlocked && $('#view') && S.tab !== 'home') { if (!S.slideTo?.('home')) goTab('home', true, -1); return; }
     if (Date.now() - lastBack < 2000) { const A = window.Capacitor?.Plugins?.App; return A ? A.exitApp() : undefined; }
     lastBack = Date.now(); toast('Press back again to exit');
   }
