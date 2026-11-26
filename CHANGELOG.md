@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.14.0] - 2026-11-26
+### Added
+- **Full screen.** The status bar (clock, battery) and the navigation bar are hidden, so Tradebot uses the whole screen. Swipe in from the top or bottom edge to see them for a moment. They hide again on their own.
+  - On by default. Turn it off in Profile → Appearance → **Full screen**.
+  - Full screen is applied again whenever you come back to the app, and after rotating.
+  - On phones with a camera cutout (punch-hole or notch), the page is pushed clear of it in portrait and landscape.
+
+### Fixed
+- In the light theme, the status and navigation bar areas could stay dark. The app now reaches its native bar helper through Capacitor's plugin registry, and also sets the bar colours directly on Android 14 and older.
+
 ## [1.13.1] - 2026-11-26
 ### Changed
 - **Exit confirmation.** Pressing Back on Home, or on the welcome or lock screen, now opens an "Exit Tradebot?" dialog with **Stay** and **Exit**. It replaces "press back again to exit". Pressing Back again, or tapping outside, keeps you in the app.

@@ -505,3 +505,16 @@ html.private #eq { display: none; }
   .lock > .keypad { grid-column: 2; grid-row: 2 / span 3; grid-template-columns: repeat(3, 68px); gap: 10px; }
   .lock .keypad button { height: 50px; font-size: 20px; border-radius: 18px; }
 }
+
+/* Full screen: keep content clear of a camera cutout (sizes come from the native ThemeBars.insets) */
+:root { --cut-top: 0px; --cut-right: 0px; --cut-bottom: 0px; --cut-left: 0px; }
+html.fullscreen #app { padding-left: var(--cut-left); padding-right: var(--cut-right); box-sizing: border-box; }
+html.fullscreen .screen { padding-top: calc(env(safe-area-inset-top) + 18px + var(--cut-top)); }
+html.fullscreen .nav { padding-bottom: calc(env(safe-area-inset-bottom) + 12px + var(--cut-bottom)); }
+html.fullscreen .sheet { padding-bottom: calc(env(safe-area-inset-bottom) + 22px + var(--cut-bottom)); }
+@media (orientation: landscape) and (min-width: 640px) {
+  html.fullscreen { --rail: calc(86px + env(safe-area-inset-left) + var(--cut-left)); }
+  html.fullscreen .nav { padding-left: calc(env(safe-area-inset-left) + var(--cut-left) + 8px); padding-bottom: 10px; }
+  html.fullscreen #app:has(> .nav) { padding-left: 0; }
+  html.fullscreen #app:has(> .nav) .screen { padding-top: calc(env(safe-area-inset-top) + 12px + var(--cut-top)); }
+}
