@@ -278,6 +278,19 @@
      Back closes the top dialog/sheet → otherwise jumps straight to Home → on Home, press twice to exit. */
   const navStack = [];
   const TAB_ORDER = ['home', 'markets', 'bot', 'portfolio', 'profile'];
+  /* Rotation: re-lay out the current page and any open panel when the screen width changes
+     (height-only changes are the keyboard opening, which must not rebuild the page under the cursor). */
+  let lastW = innerWidth, rotT;
+  addEventListener('resize', () => {
+    if (innerWidth === lastW) return; lastW = innerWidth;
+    clearTimeout(rotT); rotT = setTimeout(() => {
+      $$('.peek').forEach(x => x.remove()); const sc = $('#view .screen'); if (sc) sc.style.transform = '';
+      if ($('#view') && S.tab) { $('#view').dataset.view = ''; renderView(); }
+      if ($('#tradesheet')) tradeSheetUpdate();
+      if ($('#symsheet')) { symbolSheetUpdate(); drawChart($('#symchart'), S.focus); }
+      if (S.tab === 'home' && S.tradeIdx) { const sl = $('.tslider'); if (sl) sl.scrollLeft = S.tradeIdx * sl.clientWidth; }
+    }, 150);
+  });
   function goTab(tab, fromBack = false, dir = 0, noAnim = false) {
     if (!$('#view') || tab === S.tab) return;
     if (!dir) dir = Math.sign(TAB_ORDER.indexOf(tab) - TAB_ORDER.indexOf(S.tab));

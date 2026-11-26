@@ -463,3 +463,45 @@ html.private #eq { display: none; }
 .headline:first-of-type { border-top: 0; }
 .headline .title { font-size: 14px; line-height: 1.35; }
 .headline .chip { margin-left: 4px; }
+
+/* ===== Landscape (phone on its side, tablets): navigation becomes a side rail ===== */
+@media (orientation: landscape) and (min-width: 640px) {
+  :root { --rail: calc(86px + env(safe-area-inset-left)); }
+  #app:has(> .nav) { max-width: none; margin: 0 0 0 var(--rail); }
+  #app:has(> .nav) .screen { max-width: 860px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 22px) 28px 22px; }
+  .nav { top: 0; bottom: 0; left: 0; transform: none; width: var(--rail); max-width: none; display: flex; align-items: center;
+    padding: 10px 8px 10px calc(env(safe-area-inset-left) + 8px); background: linear-gradient(to right, var(--bg) 70%, transparent); }
+  .nav-inner { flex-direction: column; width: 100%; gap: 2px; padding: 6px 4px; max-height: 100%; overflow-y: auto; }
+  .nav button { flex: none; padding: 7px 0; font-size: 10px; }
+  .peek { left: var(--rail); width: calc(100vw - var(--rail)); max-width: none; margin-left: 0; }
+  .sheet { max-width: 680px; max-height: 94vh; }
+  .dlg { max-height: 92vh; overflow-y: auto; }
+  .toast { left: calc(50% + var(--rail) / 2); }
+}
+/* Short landscape phones: tighter vertical spacing */
+@media (orientation: landscape) and (max-height: 500px) {
+  .topbar { margin-bottom: 10px; }
+  .chart-box canvas { max-height: 62vh; }
+  .sheet { padding-top: 6px; }
+}
+/* Welcome slides and PIN lock side by side when the phone is on its side */
+@media (orientation: landscape) and (max-height: 560px) {
+  .welcome { padding-top: calc(env(safe-area-inset-top) + 12px); padding-bottom: 14px; max-width: 760px; margin: 0 auto; }
+  #app:has(> .welcome), #app:has(> .lock) { max-width: 800px; }
+  .slide { display: grid; grid-template-columns: 150px minmax(0, 420px); grid-template-rows: auto auto; align-content: center; justify-content: center; text-align: left; column-gap: 36px; }
+  .slide .art { grid-row: 1 / span 2; align-self: center; width: 150px; height: 150px; margin: 0; border-radius: 44px; }
+  .slide p { max-width: none; }
+  .slide .art svg { width: 76px; height: 76px; }
+  .slide h1 { font-size: 26px; margin: 0; align-self: end; }
+  .slide p { margin: 10px 0 0; align-self: start; }
+  .welcome .dots { margin: 10px 0; }
+  .welcome #next { max-width: 380px; width: 100%; margin: 0 auto; }
+  .lock { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto 1fr; column-gap: 30px; align-content: center; max-width: 760px; margin: 0 auto; padding-top: 12px; padding-bottom: 12px; }
+  .lock > :nth-child(1) { grid-column: 1; grid-row: 1; justify-self: center; }
+  .lock > :nth-child(2) { grid-column: 1; grid-row: 2; }
+  .lock > :nth-child(3) { grid-column: 1; grid-row: 3; }
+  .lock > :nth-child(4) { grid-column: 1; grid-row: 4; justify-self: center; align-self: start; margin-top: 14px; }
+  .lock > .pin-dots { grid-column: 2; grid-row: 1; margin: 6px 0 12px; }
+  .lock > .keypad { grid-column: 2; grid-row: 2 / span 3; grid-template-columns: repeat(3, 68px); gap: 10px; }
+  .lock .keypad button { height: 50px; font-size: 20px; border-radius: 18px; }
+}

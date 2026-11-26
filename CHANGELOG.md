@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0] - 2026-11-26
+### Added
+- **Landscape and auto-rotation.** The app now turns with your phone and follows Android's auto-rotate setting: with rotation lock on, it stays upright. Before, it was locked to portrait.
+  - On its side, the bottom bar becomes a **side rail** on the left, and pages use the extra width up to a comfortable reading width. Charts are much wider.
+  - The welcome slides show the picture beside the text, and the PIN lock shows the keypad beside your name and fingerprint button, so nothing is cut off on a short screen.
+  - Swiping between tabs, panels, dialogs and the trade chart all work sideways.
+  - Rotating while the app is open re-lays out the page, charts and any open panel straight away.
+  - The page is not rebuilt when only the height changes, as it does when the keyboard opens, so typing in search or forms isn't interrupted.
+
 ## [1.12.1] - 2026-11-26
 ### Changed
 - **Live data refreshes every second** on Paper and Own VPS. Before, Paper prices moved every 1.5 s but the screen refreshed every 2 s, so updates arrived 2–3 s apart. Now prices, P/L and equity update together once a second, and the refresh ring counts down 1 s.

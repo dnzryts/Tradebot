@@ -1,4 +1,4 @@
-// Post-`cap add android` patches: permissions, version and portrait lock.
+// Post-`cap add android` patches: permissions, version and rotation.
 // Safe to run repeatedly.
 import fs from 'node:fs';
 
@@ -17,7 +17,9 @@ const perms = [
 for (const p of perms) {
   if (!m.includes(`"${p}"`)) m = m.replace('</manifest>', `    <uses-permission android:name="${p}" />\n</manifest>`);
 }
-if (!m.includes('android:screenOrientation')) m = m.replace('<activity', '<activity\n            android:screenOrientation="portrait"');
+// Rotate with the device (fullUser respects the phone's auto-rotate / rotation-lock setting).
+m = m.replace(/\s*android:screenOrientation="[^"]*"/, '');
+m = m.replace('<activity', '<activity\n            android:screenOrientation="fullUser"');
 fs.writeFileSync(manifestPath, m);
 
 let g = fs.readFileSync(gradlePath, 'utf8');
