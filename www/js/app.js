@@ -663,6 +663,153 @@
     if (S.marketVisible.join() !== before && !S._mktPending) { S._mktPending = true; setTimeout(() => { S._mktPending = false; analyseAll(); }, 250); }
   }
 
+
+  /* ===================== Trade journal & performance guardrails =====================
+     Every trade gets a journal entry: why it was opened (strategy, market type, score, confidence,
+     bigger-trend check, news) and, once closed, how it ended (P/L, R, exit reason, duration).
+     Kept light on purpose:
+       • Active journal: open trades + the most recent 300 closed ones (one small localStorage key).
+       • Older closed trades move to an archive key in batches (max 3,000); beyond that the oldest are
+         dropped but still counted in running totals per symbol / strategy, so long-run stats survive.
+       • Nothing runs on the 1-second refresh except a check of the few open entries; stats and
+         guardrails are recalculated only when a trade actually closes, and cached until the next one. */
+  const J_ACTIVE = 300, J_ARCHIVE = 2000, J_BATCH = 100;
+  const GUARD = { MIN: 30, NET_R: -5, PF: .8 };
+  const J = { list: store.get('journal') || [], ver: 0, cache: {}, arcN: null };
+  const arcCount = () => J.arcN ??= (store.get('journalArc') || []).length;
+  /* Archived entries keep only what stats and the journal list need (about half the size). */
+  const compact = e => ({ sym: e.sym, side: e.side, src: e.src, t: e.t, acct: e.acct, lot: e.lot, ctx: e.ctx && { strategy: e.ctx.strategy, regime: e.ctx.regime, score: e.ctx.score, conf: e.ctx.conf }, out: { t: e.out.t, profit: e.out.profit, r: e.out.r, why: e.out.why, mins: e.out.mins } });
+  const acctKey = () => S.conn?.mode === 'demo' || !S.conn?.mode ? 'paper' : `${S.conn.mode}:${S.conn.login || S.conn.accountId || ''}`;
+  function jSave() {
+    J.ver++; J.cache = {};
+    const closed = J.list.filter(e => e.out);
+    if (closed.length > J_ACTIVE + J_BATCH) {                 // archive in batches, not on every close
+      const move = new Set(closed.slice(0, closed.length - J_ACTIVE));
+      const arc = store.get('journalArc') || [];
+      arc.push(...J.list.filter(e => move.has(e)).map(compact));
+      if (arc.length > J_ARCHIVE) {                           // roll the oldest into totals, then drop them
+        const tot = store.get('journalTotals') || {};
+        arc.splice(0, arc.length - J_ARCHIVE).forEach(e => ['sym:' + e.sym, 'strat:' + (e.ctx?.strategy || 'manual')].forEach(k => {
+          const t = (tot[e.acct + '|' + k] ||= { n: 0, w: 0, r: 0, usd: 0 }); t.n++; if (e.out.profit > 0) t.w++; t.r += e.out.r || 0; t.usd += e.out.profit; }));
+        store.set('journalTotals', tot);
+      }
+      store.set('journalArc', arc); J.arcN = arc.length;
+      J.list = J.list.filter(e => !move.has(e));
+    }
+    store.set('journal', J.list);
+  }
+  /* Remove one account's entries (active + archive), e.g. after a paper reset where trade ids start again. */
+  function journalClear(acct) {
+    J.list = J.list.filter(e => e.acct !== acct);
+    const arc = (store.get('journalArc') || []).filter(e => e.acct !== acct); store.set('journalArc', arc); J.arcN = arc.length;
+    const tot = store.get('journalTotals') || {}; Object.keys(tot).forEach(k => { if (k.startsWith(acct + '|')) delete tot[k]; }); store.set('journalTotals', tot);
+    if (acct === acctKey() && S.bot.guard) { S.bot.guard.paused = {}; S.bot.guard.since = {}; save(); }
+    jSave();
+  }
+  const journalSizeKb = () => Math.round(['journal', 'journalArc', 'journalTotals'].reduce((a, k) => a + (localStorage.getItem('tb_' + k)?.length || 0), 0) / 1024);
+  /* Called right after an order is accepted. */
+  function journalOpen({ id, sym, side, volume, entry, sl, tp, spec, src, ctx }) {
+    let riskUsd = null;
+    try { if (sl) riskUsd = Math.abs(entry - sl) * valuePerUnit(sym, spec, entry) * volume; } catch { }
+    J.list.push({ id: id != null ? String(id) : null, sym, side, src, t: Date.now(), acct: acctKey(), entry, sl, tp, lot: volume, riskUsd: riskUsd ? +riskUsd.toFixed(2) : null, ctx });
+    jSave();
+  }
+  /* On each refresh: link entries to their position ids, and close entries whose trade has closed.
+     Only the open entries (a handful) are looked at; history is indexed once per refresh. */
+  function journalReconcile() {
+    const open = J.list.filter(e => !e.out && e.acct === acctKey()); if (!open.length) return;
+    let changed = false;
+    open.filter(e => !e.id).forEach(e => {
+      const p = S.positions.find(x => x.symbol === e.sym && (x.type === 'POSITION_TYPE_BUY') === (e.side === 'BUY') && Math.abs((x.time || 0) - e.t) < 120000 && !J.list.some(o => o.id === String(x.id)));
+      if (p) { e.id = String(p.id); changed = true; }
+    });
+    const live = new Set(S.positions.map(p => String(p.id)));
+    const pending = open.filter(e => e.id && !live.has(e.id)); if (!pending.length) { if (changed) jSave(); return; }
+    const deals = new Map(); (S.history || []).forEach(d => { if (!deals.has(String(d.id))) deals.set(String(d.id), d); });
+    pending.forEach(e => {
+      const d = deals.get(e.id); if (!d) return;
+      e.out = { t: d.time, profit: +(+d.profit).toFixed(2), r: e.riskUsd ? +(d.profit / e.riskUsd).toFixed(2) : null, why: closeWhy(d), mins: Math.round((d.time - e.t) / 6e4) };
+      changed = true;
+      if (e.src === 'bot') log(`📓 ${e.sym} closed ${signed(d.profit)}${e.out.r != null ? ` (${e.out.r > 0 ? '+' : ''}${e.out.r}R)` : ''} · ${e.out.why}`, cls(d.profit));
+    });
+    if (changed) { jSave(); if (pending.some(e => e.out)) checkGuardrails(); }
+  }
+  /* Stats over closed entries; cached per journal version. */
+  function jStats(list) {
+    const n = list.length, w = list.filter(e => e.out.profit > 0).length, rs = list.map(e => e.out.r).filter(x => x != null);
+    const gain = rs.filter(x => x > 0).reduce((a, b) => a + b, 0), loss = -rs.filter(x => x < 0).reduce((a, b) => a + b, 0);
+    return { n, win: n ? Math.round(w / n * 100) : 0, r: +rs.reduce((a, b) => a + b, 0).toFixed(1), avg: rs.length ? +(rs.reduce((a, b) => a + b, 0) / rs.length).toFixed(2) : 0,
+      pf: loss ? +(gain / loss).toFixed(2) : gain ? Infinity : 0, usd: list.reduce((a, e) => a + e.out.profit, 0) };
+  }
+  const NEWS_BUCKET = e => e.ctx?.newsNext != null && e.ctx.newsNext < 240 ? 'High-impact news within 4 h' : 'No big news nearby';
+  const GROUPS = { symbol: e => e.sym, strategy: e => e.src === 'manual' ? '✋ Manual' : (Engine.STRATEGIES[e.ctx?.strategy]?.label || e.ctx?.strategy || '—'), regime: e => e.ctx?.regime ? (Engine.REGIME_LABEL[e.ctx.regime] || e.ctx.regime) : '—', news: NEWS_BUCKET };
+  function jGroups(by) {
+    const key = by + J.ver + acctKey(); if (J.cache[key]) return J.cache[key];
+    const all = J.list.filter(e => e.out && e.acct === acctKey()), g = {};
+    all.forEach(e => (g[GROUPS[by](e)] ||= []).push(e));
+    return (J.cache[key] = Object.entries(g).map(([k, l]) => [k, jStats(l)]).sort((a, b) => b[1].n - a[1].n));
+  }
+  /* Guardrails: pause a symbol or strategy that keeps losing. Never raises risk or changes settings. */
+  function checkGuardrails() {
+    const G = (S.bot.guard ||= { on: true, paused: {}, since: {} }); if (!G.on) return;
+    const acct = acctKey(), bot = J.list.filter(e => e.out && e.src === 'bot' && e.acct === acct);
+    const test = (key, label, pick) => {
+      if (G.paused[key]) return;
+      const l = bot.filter(e => pick(e) && e.out.t > (G.since[key] || 0)).slice(-GUARD.MIN);
+      if (l.length < GUARD.MIN) return;
+      const st = jStats(l);
+      if (st.r <= GUARD.NET_R && st.pf < GUARD.PF) {
+        G.paused[key] = { t: Date.now(), n: st.n, r: st.r, pf: st.pf, win: st.win }; save();
+        const msg = `${label} paused: ${st.r}R over its last ${st.n} trades (${st.win}% won, profit factor ${st.pf}).`;
+        log('🛡 ' + msg, 'down'); notify('Tradebot guardrail', msg + ' Resume it in Auto-Trade when you are ready.');
+      }
+    };
+    [...new Set(bot.map(e => e.sym))].forEach(sy => test('sym:' + sy, sy, e => e.sym === sy));
+    [...new Set(bot.map(e => e.ctx?.strategy).filter(Boolean))].forEach(st => test('strat:' + st, `${Engine.STRATEGIES[st]?.label || st} strategy`, e => e.ctx?.strategy === st));
+  }
+  const guardBlock = (sym, strat) => { const G = S.bot.guard; if (!G?.on) return null; return G.paused['sym:' + sym] ? ['sym:' + sym, sym] : strat && G.paused['strat:' + strat] ? ['strat:' + strat, `${Engine.STRATEGIES[strat]?.label} strategy`] : null; };
+  function resumeGuard(key) { const G = S.bot.guard; delete G.paused[key]; G.since[key] = Date.now(); save(); log(`🛡 Resumed ${key.split(':')[1]}: counting its trades afresh`); }
+  function guardCardHtml() {
+    const G = S.bot.guard || {}, p = Object.entries(G.paused || {});
+    if (!p.length) return '';
+    return `<div class="notice" style="margin-bottom:12px"><b>🛡 Paused by guardrail</b>
+      ${p.map(([k, v]) => `<div class="row between" style="margin-top:8px;gap:8px"><div><b>${k.startsWith('sym:') ? k.slice(4) : (Engine.STRATEGIES[k.slice(6)]?.label || k.slice(6)) + ' strategy'}</b><div class="sub">${v.r}R over ${v.n} trades · ${v.win}% won · since ${clock(v.t)}</div></div><button class="btn small ghost" data-resume="${k}">Resume</button></div>`).join('')}
+      <div class="sub" style="margin-top:8px">The bot stops opening new trades on these. Open trades are not touched. Resume starts its count from zero.</div></div>`;
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-resume]'); if (b) { resumeGuard(b.dataset.resume); if (S.tab === 'bot') viewBot($('#view')); else renderView(); } });
+  /* Portfolio card: what is working and what is not. */
+  function perfHtml() {
+    const by = S.perfBy || 'symbol', rows = jGroups(by), n = rows.reduce((a, [, s]) => a + s.n, 0), G = S.bot.guard || {};
+    const status = k => { const key = by === 'symbol' ? 'sym:' + k : by === 'strategy' ? 'strat:' + (Object.entries(Engine.STRATEGIES).find(([, v]) => v.label === k)?.[0] || '') : ''; return G.paused?.[key] ? '<span class="chip mini down">Paused</span>' : ''; };
+    return `<div class="seg small" id="perfby">${[['symbol', 'Symbol'], ['strategy', 'Strategy'], ['regime', 'Market type'], ['news', 'News']].map(([k, l]) => `<button data-b="${k}" class="${by === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${n ? `<div class="lvl head perf"><span>${({ symbol: 'Symbol', strategy: 'Strategy', regime: 'Market type', news: 'News' })[by]}</span><span>Trades</span><span>Won</span><span>Net R</span></div>
+      ${rows.map(([k, st]) => `<div class="lvl perf"><span class="title" style="font-size:13px">${esc(k)} ${status(k)}</span><span class="mono">${st.n}${st.n < GUARD.MIN ? `<span class="sub">/${GUARD.MIN}</span>` : ''}</span><span class="mono">${st.win}%</span><b class="mono ${st.r > 0 ? 'up' : st.r < 0 ? 'down' : ''}">${st.r > 0 ? '+' : ''}${st.r}R</b></div>`).join('')}`
+      : '<div class="sub" style="padding:12px 0">Closed trades appear here with why they were opened and how they ended.</div>'}
+      <p class="hint">R = result ÷ amount risked. Fewer than ${GUARD.MIN} trades in a row is too few to judge${acctKey() === 'paper' ? '. <b>Paper prices are random</b>, so these numbers say nothing about the strategy' : ''}.</p>
+      <button class="btn ghost small" id="openjournal" style="margin-top:4px">Open trade journal</button>`;
+  }
+  function openJournal() {
+    let shown = 50;
+    const bg = sheet('<h2>Trade journal</h2><div id="jbody"></div>', null, 'journalsheet');
+    const draw = () => {
+      const all = J.list.filter(e => e.acct === acctKey()).slice().reverse(), arcN = (store.get('journalArc') || []).filter(e => e.acct === acctKey()).length;
+      $('#jbody', bg).innerHTML = `<p class="sub" style="margin:-4px 0 10px">${all.length} recent${arcN ? ` · ${arcN} archived` : ''} · ${acctKey() === 'paper' ? 'Paper' : 'This MT5 account'}</p>
+        ${all.slice(0, shown).map(e => { const c = e.ctx || {}, o = e.out;
+          return `<div class="jrow"><div class="row between"><div><span class="side ${e.side === 'BUY' ? 'up' : 'down'}">${e.side}</span> <b>${e.sym}</b> <span class="sub">${fmt(e.lot)} lot · ${e.src === 'bot' ? '🤖' : '✋'} · ${clock(e.t)}</span></div>
+            ${o ? `<b class="mono ${cls(o.profit)}">${signed(o.profit)}${o.r != null ? ` <span class="sub">${o.r > 0 ? '+' : ''}${o.r}R</span>` : ''}</b>` : '<span class="chip mini">Open</span>'}</div>
+            <div class="sub" style="margin-top:4px">${e.src === 'bot' ? `${Engine.STRATEGIES[c.strategy]?.icon || ''} ${Engine.STRATEGIES[c.strategy]?.label || c.strategy || ''} · ${Engine.REGIME_LABEL[c.regime] || c.regime || '—'} · score ${c.score > 0 ? '+' : ''}${c.score} · ${c.conf}% conf${c.htf === true ? ' · with the bigger trend' : c.htf === false ? ' · against the bigger trend' : ''}${c.news != null ? ` · news ${c.news > 0 ? '+' : ''}${Math.round(c.news * 100)}` : ''}${c.newsNext != null && c.newsNext < 240 ? ` · big news in ${c.newsNext < 60 ? c.newsNext + 'm' : Math.round(c.newsNext / 60) + 'h'}` : ''}` : 'Manual order'}</div>
+            ${o ? `<div class="sub">${o.why} after ${o.mins < 60 ? o.mins + 'm' : o.mins < 1440 ? Math.round(o.mins / 60) + 'h' : Math.round(o.mins / 1440) + 'd'}</div>` : ''}</div>`; }).join('') || '<div class="empty">No trades yet.</div>'}
+        ${all.length > shown ? '<button class="btn ghost small" id="jmore" style="margin-top:10px">Show more</button>' : ''}`;
+      const m = $('#jmore', bg); if (m) m.onclick = () => { shown += 50; draw(); };
+    };
+    draw();
+  }
+  const journalCtx = (sym, a, d) => {
+    const ev = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now(), impacts: ['High'] })[0];
+    return { strategy: d?.strategy, regime: a?.regime, score: a?.score, conf: a?.confidence, htf: d ? htfOk(sym, d.action) : null,
+      news: S.newsKey ? Brokers.News.forSymbol(sym, S.newsKey) ?? null : null, newsNext: ev ? Math.round((ev.time - Date.now()) / 6e4) : null };
+  };
+
   /* ---------- News & economic calendar ---------- */
   const relTime = t => { const m = Math.round((t - Date.now()) / 6e4), a = Math.abs(m), s = a < 60 ? `${a}m` : a < 1440 ? `${Math.floor(a / 60)}h${a % 60 ? ' ' + (a % 60) + 'm' : ''}` : `${Math.floor(a / 1440)}d`; return a < 1 ? 'now' : m > 0 ? `in ${s}` : `${s} ago`; };
   const clock = t => { const d = new Date(t), today = new Date().toDateString() === d.toDateString(); return (today ? '' : d.toLocaleDateString([], { weekday: 'short' }) + ' ') + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
@@ -756,6 +903,7 @@
         <div class="stat"><div class="lbl">To target</div><div class="val">${prog == null ? '—' : Math.round(prog * 100) + '%'}</div></div>
         <div class="stat"><div class="lbl">Reward : risk</div><div class="val">${tpUsd != null && riskUsd ? fmt(tpUsd / riskUsd, 1) + ' : 1' : '—'}</div></div>
         <div class="stat"><div class="lbl">Now in R</div><div class="val mono ${cls(p.profit)}">${riskUsd ? (p.profit >= 0 ? '+' : '') + fmt(p.profit / riskUsd, 2) + 'R' : '—'}</div></div></div>
+      ${(() => { const j = J.list.find(e => e.id === String(p.id)), c = j?.ctx; return j && j.src === 'bot' && c ? `<p class="hint" style="margin-top:10px">📓 <b>Why the bot took it:</b> ${Engine.STRATEGIES[c.strategy]?.label || c.strategy} strategy in a ${(Engine.REGIME_LABEL[c.regime] || c.regime || '').toLowerCase()} market · score ${c.score > 0 ? '+' : ''}${c.score} · ${c.conf}% confidence${c.htf === true ? ' · with the bigger trend' : ''}${c.newsNext != null && c.newsNext < 240 ? ` · big news was ${c.newsNext}m away` : ''}.</p>` : ''; })()}
       ${trail ? `<p class="hint" style="margin-top:10px">${trail}</p>` : ''}
       ${(() => { const e = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now() - 15 * 6e4, impacts: ['High'] }).find(x => x.time < Date.now() + 2 * 36e5); return e ? `<div class="notice" style="margin-top:10px">⚠ <b>${e.ccy} ${esc(e.title)}</b> ${relTime(e.time)} (${clock(e.time)}). High-impact news can make the price jump past a stop-loss or take-profit.</div>` : ''; })()}
       <p class="hint">P/L at each level is projected from the current price and lot size. Spread, commission and swap are not included${p.swap ? ` (swap so far ${signed(p.swap)})` : ''}.</p>
@@ -828,6 +976,7 @@
       ${isLive() ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
       <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
       <div class="card tested" id="tested" data-view="tested">${testedHtml()}</div>
+      ${guardCardHtml()}
       <div class="lockbar ${S.settingsUnlocked ? 'open' : ''}" id="lockbar"><div><b id="lockt">${S.settingsUnlocked ? '🔓 Editing settings' : '🔒 Settings locked'}</b><div class="sub" id="locks">${S.settingsUnlocked ? 'Lock again when you are done' : 'Prevents accidental changes while scrolling'}</div></div><button class="btn small ${S.settingsUnlocked ? '' : 'ghost'}" id="lockbtn">${S.settingsUnlocked ? 'Lock' : 'Unlock to edit'}</button></div>
       <div id="botsettings" class="${S.settingsUnlocked ? '' : 'locked'}">
       <div class="${atLeast('moderate') ? '' : 'hidden'}"><h3>Strategy</h3><div class="strat-grid" id="strat">${Object.entries(Engine.STRATEGIES).map(([k, st]) => `<button data-st="${k}" class="strat ${b.strategy === k ? 'on' : ''}"><span class="em">${st.icon}</span><b>${st.label}</b><small>${st.desc}</small></button>`).join('')}</div></div>
@@ -843,6 +992,7 @@
         ${slider('slAtr', 'Stop-loss (× ATR)', .5, 5, .1)}
         ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}</div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Follow the bigger trend</div><div class="sub" id="htfsub">Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down</div></div><label class="toggle"><input type="checkbox" id="htf" ${b.htfFilter ? 'checked' : ''}><span></span></label></div>
+        <div class="row between" style="margin-bottom:14px"><div><div class="title">Guardrails: pause what keeps losing</div><div class="sub">If a symbol or strategy loses ${Math.abs(GUARD.NET_R)}R or more over its last ${GUARD.MIN} bot trades (profit factor under ${GUARD.PF}), stop opening trades on it and tell you. Never raises risk.</div></div><label class="toggle"><input type="checkbox" id="guardon" ${S.bot.guard?.on !== false ? 'checked' : ''}><span></span></label></div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Pause around high-impact news</div><div class="sub">No new trades from 30 min before until 30 min after big news for the symbol's currencies (rate decisions, CPI, jobs reports)</div></div><label class="toggle"><input type="checkbox" id="npause" ${b.newsPause ? 'checked' : ''}><span></span></label></div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Protect profits</div><div class="sub">Trailing stop: once a trade is up by the amount it risks, its stop-loss follows the price at that distance, locking in profit</div></div><label class="toggle"><input type="checkbox" id="trail" ${b.trailing ? 'checked' : ''}><span></span></label></div>
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
@@ -880,6 +1030,7 @@
     $$('#preset button').forEach(x => x.onclick = () => { applyTested(x.dataset.k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; save(); analyseAll(); });
+    $('#guardon').onchange = e => { (S.bot.guard ||= { on: true, paused: {}, since: {} }).on = e.target.checked; save(); if (e.target.checked) checkGuardrails(); };
     $('#npause').onchange = e => { b.newsPause = e.target.checked; save(); log(b.newsPause ? 'Pause around high-impact news: on' : 'Pause around high-impact news: off'); };
     $('#trail').onchange = e => { b.trailing = e.target.checked; save(); log(b.trailing ? 'Protect profits on (trailing stop)' : 'Protect profits off'); };
     $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
@@ -996,6 +1147,7 @@
         <div class="grid3"><div class="stat"><div class="lbl">Trades</div><div class="val">${h.length}</div></div><div class="stat"><div class="lbl">Avg win</div><div class="val mono up">${money(wins.length ? wins.reduce((s, d) => s + d.profit, 0) / wins.length : 0)}</div></div>
         <div class="stat"><div class="lbl">Avg loss</div><div class="val mono down">${money(h.length - wins.length ? h.filter(d => d.profit <= 0).reduce((s, d) => s + d.profit, 0) / (h.length - wins.length) : 0)}</div></div></div></div>
       ${h.length ? `<h3>Where P/L comes from</h3><div class="card">${exitBreakdown(h)}</div>` : ''}
+      <h3>Bot performance</h3><div class="card" id="perf" data-key="perf">${perfHtml()}</div>
       <h3>Allocation</h3><div class="card">${Object.keys(exp).length ? `<div class="row">${donut(exp)}<div class="donut-legend grow">${Object.entries(exp).map(([s, vol], k) => `<div><i style="background:${pal(k)}"></i>${s}<span class="grow"></span><b class="mono">${fmt(vol)} lot</b></div>`).join('')}</div></div>` : '<div class="empty">No open exposure</div>'}</div>
       ${posHeader('Open positions · ' + S.positions.length)}<div class="card">${positionsHtml(S.positions)}</div>
       <h3>Closed trades</h3><div class="card">${h.slice(0, 30).map(d => `<div class="list-item" data-key="d${d.id}-${d.time}"><div class="avatar ${d.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
@@ -1003,6 +1155,8 @@
         <div class="mono title ${cls(d.profit)}">${signed(d.profit)}</div></div>`).join('') || '<div class="empty">No closed trades yet</div>'}</div>
     </div>`, 'portfolio');
     bindTop(); bindPositions(v);
+    $$('#perfby button', v).forEach(b => b.onclick = () => { S.perfBy = b.dataset.b; const c = $('#perf', v); c.innerHTML = perfHtml(); viewPortfolio(v); });
+    const oj = $('#openjournal', v); if (oj) oj.onclick = openJournal;
     const pts = []; let run = (a.balance ?? 0) - realized; pts.push(run); h.slice().reverse().forEach(d => pts.push(run += d.profit)); pts.push(a.equity ?? run);
     if (!S.privacy) drawLine($('#eq'), pts);
   }
@@ -1144,7 +1298,9 @@
         <div class="field" style="margin-top:10px"><label>Headline sentiment · Alpha Vantage key (optional)</label><input class="input mono" id="nkey" value="${esc(S.newsKey)}" placeholder="Free key from alphavantage.co"></div>
         <div class="hint">Adds a news factor (20% weight) to each symbol's score: currency tone for forex, USD tone (inverted) for gold and silver, market tone for US indices, coin tone for crypto. The free key allows 25 requests a day, so headlines refresh every 90 minutes (16 a day).${S.newsKey ? ` Status: ${Brokers.News.st.status ? esc(Brokers.News.st.status) : Brokers.News.st.ok ? `${Brokers.News.st.articles.length} articles, updated ${relTime(Brokers.News.st.ok)}` : 'waiting for first update'}.` : ''}</div>
         <button class="btn ghost" id="nsave" style="margin-top:10px">Save key</button></div>
-      <h3>Data</h3><div class="card">${S.conn.mode === 'demo' ? '<button class="btn ghost" id="reset" style="margin-bottom:10px">Reset paper account</button>' : ''}<button class="btn danger" id="wipe">Sign out & erase app data</button></div>
+      <h3>Data</h3><div class="card">
+        <div class="row between list-item" style="margin-bottom:10px"><div><div class="title">Trade journal</div><div class="sub">${J.list.length} recent · ${arcCount()} archived · ${journalSizeKb()} KB. Keeps the latest ${J_ACTIVE} closed trades at hand and archives older ones automatically (up to ${J_ARCHIVE.toLocaleString()}; beyond that only totals are kept).</div></div><button class="btn small ghost" id="jclear">Clear</button></div>
+        ${S.conn.mode === 'demo' ? '<button class="btn ghost" id="reset" style="margin-bottom:10px">Reset paper account</button>' : ''}<button class="btn danger" id="wipe">Sign out & erase app data</button></div>
       <h3>About</h3><div class="card about" id="about">${aboutHtml()}</div>
       <p class="hint" style="text-align:center;margin-top:12px">Not financial advice. Trading leveraged products carries a high risk of loss.</p>
     </div>`;
@@ -1183,7 +1339,8 @@
     $$('#cconf button').forEach(b => b.onclick = () => { S.prefs.confirmClose = b.dataset.c; save(); $$('#cconf button').forEach(x => x.classList.toggle('on', x === b)); toast(b.dataset.c === 'off' ? 'Close confirmation off' : b.dataset.c === 'loss' ? 'Confirm closing losing trades' : 'Confirm closing every trade'); });
     $('#plock').onclick = () => { S.unlocked = false; render(); };
     $('#nsave').onclick = async () => { S.newsKey = $('#nkey').value.trim(); store.set('newsKey', S.newsKey); toast(S.newsKey ? 'News sentiment enabled' : 'News sentiment off'); if (S.newsKey) { await Brokers.News.refresh(S.newsKey, true); viewProfile(v); analyseAll(); } };
-    const r = $('#reset'); if (r) r.onclick = async () => { if (await ask({ title: 'Reset paper account?', message: 'Balance goes back to $10,000 and paper positions and history are cleared.', ok: 'Reset', tone: 'danger', ic: 'wallet' })) { S.broker.reset(); log('Paper account reset'); poll(); toast('Paper account reset'); } };
+    $('#jclear').onclick = async () => { if (await ask({ title: 'Clear trade journal?', message: `Removes the journal and its stats for ${acctKey() === 'paper' ? 'Paper' : 'this MT5 account'} and resets guardrails. Trades and history at your broker are not affected.`, ok: 'Clear', tone: 'danger', ic: 'wallet' })) { journalClear(acctKey()); toast('Journal cleared'); viewProfile(v); } };
+    const r = $('#reset'); if (r) r.onclick = async () => { if (await ask({ title: 'Reset paper account?', message: 'Balance goes back to $10,000 and paper positions and history are cleared.', ok: 'Reset', tone: 'danger', ic: 'wallet' })) { S.broker.reset(); journalClear('paper'); log('Paper account reset'); poll(); toast('Paper account reset'); } };
     $('#wipe').onclick = async () => { if (!(await ask({ title: 'Sign out & erase data?', message: 'Your profile, PIN, settings and stored MetaApi token are removed from this device. Your MT5 account is not affected.', ok: 'Erase', tone: 'danger', ic: 'user' }))) return; await Security.deleteSecret('metaapi'); Object.keys(localStorage).filter(k => k.startsWith('tb')).forEach(k => localStorage.removeItem(k)); location.reload(); };
   }
   function changePin() {
@@ -1450,6 +1607,7 @@
       if (!S.dayStart || S.dayStart.day !== today) { S.dayStart = { day: today, equity: S.account.equity }; store.set('dayStart', S.dayStart); }
       if (isLive()) S.status = 'Connected';
       checkBasket();
+      journalReconcile();
     } catch (e) { S.status = 'Error'; }
     S._polling = false; refreshLive(); ringBusy(false); ringCycle();
   }
@@ -1508,6 +1666,8 @@
   function botDecision(sym) {
     const a = S.botAnalysis?.[sym] || S.analysis[sym], d = Engine.decide(a, S.bot.strategy, S.mood, S.bot);
     if (d.action !== 'HOLD' && htfOk(sym, d.action) === false) { d.why += ` · ${HTF[S.bot.timeframe]} trend against`; d.blocked = d.action; d.action = 'HOLD'; }
+    const gb = guardBlock(sym, d.strategy);
+    if (gb) { d.why = `🛡 Paused by guardrail: ${gb[1]} kept losing`; if (d.action !== 'HOLD') { d.blocked = d.action; d.action = 'HOLD'; } }
     const ev = S.bot.newsPause ? Brokers.Calendar.blackout(sym) : null;
     if (ev) { d.why = `⏸ News pause: ${ev.ccy} ${ev.title} ${relTime(ev.time)}`; d.news = ev; if (d.action !== 'HOLD') { d.blocked = d.action; d.action = 'HOLD'; } }
     return [a, d];
@@ -1550,6 +1710,7 @@
     const sl = slD ? r(side === 'BUY' ? entry - slD : entry + slD) : undefined;
     const tp = tpD ? r(side === 'BUY' ? entry + tpD : entry - tpD) : undefined;
     const res = await S.broker.trade({ symbol: sym, side, volume, stopLoss: sl, takeProfit: tp, comment });
+    try { journalOpen({ id: res?.positionId ?? res?.orderId ?? null, sym, side, volume, entry, sl, tp, spec, src: opt.src || (comment === 'Manual' ? 'manual' : 'bot'), ctx: opt.ctx || journalCtx(sym, a, null) }); } catch { }
     log(`${opt.tag ? opt.tag + ' ' : ''}${side} ${volume} ${sym} @ ${px(sym, entry)} · SL ${sl ? px(sym, sl) : '—'} TP ${tp ? px(sym, tp) : '—'}${usdMode ? ` (+$${fmt(S.bot.tpUsd)} / −$${fmt(S.bot.slUsd)})` : ''}`, side === 'BUY' ? 'up' : 'down');
     return res;
   }
@@ -1596,7 +1757,7 @@
         try { const q = await S.broker.getPrice(s), sp = q.ask - q.bid, slD = plan ? plan.slDist : a.atr * d.slAtr;
           if (sp > slD * SPREAD_MAX) { if ((S._spreadLog ||= {})[s] !== S.barKey[s]) { S._spreadLog[s] = S.barKey[s]; log(`Skipped ${s}: spread is ${Math.round(sp / slD * 100)}% of the stop distance`, ''); } continue; } } catch { }
         const st = Engine.STRATEGIES[d.strategy];
-        try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':' }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); }
+        try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':', src: 'bot', ctx: journalCtx(s, a, d) }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); }
         catch (e) { log(`Order ${s} failed: ${e.message}`, 'down'); }
       }
       await poll();
@@ -1663,5 +1824,5 @@
 
   applyTheme(); applyHero(); applyFullscreen();
   render();
-  window.Tradebot = S; // debugging
+  window.Tradebot = S; window.TradebotJournal = J; // debugging
 })();

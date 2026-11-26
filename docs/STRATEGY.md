@@ -128,6 +128,14 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 | **Fingerprint gate** | Enabling the bot on a live account requires biometric confirmation |
 | **Bot tagging** | Bot orders carry the comment `TB <score>`. The bot only manages its own positions, never your manual trades |
 
+## 5a. Trade journal and guardrails
+
+Every trade is journaled when it opens, with its strategy, market type, score, confidence, bigger-trend check, news tone and minutes to the next high-impact event. Its result is attached when it closes: P/L, R (P/L ÷ the amount risked at entry), exit reason and duration. Portfolio → **Bot performance** groups results by symbol, strategy, market type and news state.
+
+**Guardrails** (on by default): if a symbol or strategy has lost **5 R or more over its last 30 bot trades** with a profit factor under 0.8, the bot stops opening trades on it. It logs the decision and sends a notification. Nothing else changes: risk, settings and open trades are untouched. **Resume** in Auto-Trade starts its count from zero. Stats are kept separately for Paper and each MT5 account.
+
+**Storage:** the active journal holds open trades plus the latest 300 closed ones. Older trades move to an archive in batches of 100, about 9 ms each time. The archive keeps at most 2,000 trades in compact form (about 470 KB). Beyond that, only running totals per symbol and strategy are kept. On each 1-second refresh only the few open entries are checked. Stats are recalculated only when a trade closes, and cached.
+
 ## 6. Risk presets
 
 | Preset | Timeframe | Risk/trade | Threshold | Min conf. | Max pos. | Daily stop | SL × ATR | TP × ATR |

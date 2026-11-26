@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.15.0] - 2026-11-27
+### Added
+- **Trade journal.** Every trade, bot or manual, records **why it was opened**: strategy, market type, sentiment score, confidence, bigger-trend check, news tone and time to the next big news. When it closes, the journal adds **how it ended**: P/L, result in R (P/L ÷ amount risked), exit reason and how long it lasted.
+  - Portfolio → **Open trade journal** lists them newest first, 50 at a time.
+  - Bot trades show "Why the bot took it" on their trade chart.
+- **Bot performance** on Portfolio: trades, win rate and net R grouped by **symbol**, **strategy**, **market type** and **news**, so you can see what is working. It notes when there are too few trades to judge (under 30), and warns that Paper prices are random.
+- **Guardrails** (Auto-Trade → Strategy settings, on by default): if a symbol or strategy loses 5 R or more over its last 30 bot trades (profit factor under 0.8), the bot stops opening trades on it. It also writes to the activity log and sends a notification.
+  - The radar shows "🛡 Paused by guardrail".
+  - A card in Auto-Trade lists what's paused, with **Resume**. Resuming starts that item's count from zero.
+  - Guardrails never raise risk, change settings or touch open trades.
+- Profile → Data: journal size and a **Clear** button for the current account. Resetting the paper account clears the paper journal too.
+
+### Performance
+- **The journal can't slow the app down.**
+  - It keeps open trades plus the latest 300 closed ones. Older ones move to an archive in batches of 100, which takes about 9 ms each time.
+  - The archive holds up to 2,000 trades in compact form, about 470 KB at most. Beyond that, only per-symbol and per-strategy totals are kept.
+  - Each 1-second refresh only checks the few open trades. Stats and guardrails are recalculated only when a trade closes, then cached.
+  - Measured with 3,500 journaled trades: Portfolio redraws in about 2–5 ms, with no frame longer than about 20 ms during live updates.
+
 ## [1.14.1] - 2026-11-26
 ### Changed
 - **True edge-to-edge, like other modern apps.** The page now fills the whole screen. The background runs behind a transparent status bar and navigation bar, and content is padded to sit between them.
