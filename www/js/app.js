@@ -1399,13 +1399,13 @@
       S.broker = new Brokers.DemoBroker(store); S.status = 'Connected'; await loadCatalog();
       S.broker.onEvent = ev => { if (ev.type === 'closed' && ev.deal.reason !== 'Manual') log(`${ev.deal.reason} hit on ${ev.deal.symbol}: ${signed(ev.deal.profit)}`, cls(ev.deal.profit)); };
     }
-    S.pollMs = isLive() ? 5000 : 2000;
+    S.pollMs = S.conn.mode === 'mt5' ? 5000 : 1000;
     if (pollT) { clearInterval(pollT); pollT = setInterval(poll, S.pollMs); }
     S.candleCache = {}; await poll(); await analyseAll(); scheduleBot(true);
   }
   async function poll() {
-    if (!S.broker) return;
-    ringBusy(true);
+    if (!S.broker || S._polling) return;           // skip a beat rather than overlap if the last refresh is still running
+    S._polling = true; ringBusy(true);
     try {
       [S.account, S.positions] = await Promise.all([S.broker.getAccount(), S.broker.getPositions()]);
       if (!S._histT || Date.now() - S._histT > (isLive() ? 60000 : 0)) { S.history = await S.broker.getHistory(); S._histT = Date.now(); }
@@ -1414,7 +1414,7 @@
       if (isLive()) S.status = 'Connected';
       checkBasket();
     } catch (e) { S.status = 'Error'; }
-    refreshLive(); ringBusy(false); ringCycle();
+    S._polling = false; refreshLive(); ringBusy(false); ringCycle();
   }
   /* Basket targets: close all bot trades together at a combined $ profit or loss. */
   function checkBasket() {
@@ -1611,7 +1611,7 @@
   async function boot() {
     if (booted) return; booted = true;
     announceUpdate();
-    S.pollMs = isLive() ? 5000 : 2000;
+    S.pollMs = S.conn.mode === 'mt5' ? 5000 : 1000;
     try { await connectBroker(); } catch (e) { toast('Account offline: ' + e.message); }
     pollT = setInterval(poll, S.pollMs);
     anaT = setInterval(() => !S.bot.enabled && analyseAll(), isLive() ? 60000 : 6000);

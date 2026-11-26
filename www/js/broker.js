@@ -64,7 +64,7 @@
       this._onHide = () => this._saveMarket();
       addEventListener('pagehide', this._onHide);
       document.addEventListener('visibilitychange', this._vis = () => { if (document.hidden) this._saveMarket(); });
-      this._timer = setInterval(() => this._tick(), 1500);
+      this._timer = setInterval(() => this._tick(), 1000);
     }
     _seed(sym) {
       const sp = SPECS[sym]; let p = sp.base; const out = []; let t = Date.now() - 300 * TF_MS['15m'];
@@ -81,10 +81,10 @@
       let newCandle = false;
       Object.keys(SPECS).forEach(sym => {
         const sp = SPECS[sym], s = this.series[sym], rg = this.regime[sym], last = s.at(-1);
-        if (--rg.left <= 0) { rg.drift = (Math.random() - .5) * .55; rg.left = 30 + Math.random() * 50 | 0; }
-        const c = last.close + (rg.drift * .2 + (Math.random() - .5) * .6) * sp.vol;
+        if (--rg.left <= 0) { rg.drift = (Math.random() - .5) * .55; rg.left = 45 + Math.random() * 75 | 0; }
+        const c = last.close + (rg.drift * .133 + (Math.random() - .5) * .49) * sp.vol;
         last.close = c; last.high = Math.max(last.high, c); last.low = Math.min(last.low, c); last.tickVolume += Math.random() * 40 | 0;
-        if (++rg.ticks >= 12) { // close candle every ~18s (accelerated demo market)
+        if (++rg.ticks >= 18) { // 1 tick per second; close candle every ~18s (accelerated demo market)
           newCandle = true;
           rg.ticks = 0; s.push({ time: last.time + TF_MS['15m'], open: c, high: c, low: c, close: c, tickVolume: 50 }); if (s.length > 400) s.shift();
         }

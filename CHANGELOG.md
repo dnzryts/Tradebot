@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1] - 2026-11-26
+### Changed
+- **Live data refreshes every second** on Paper and Own VPS. Before, Paper prices moved every 1.5 s but the screen refreshed every 2 s, so updates arrived 2–3 s apart. Now prices, P/L and equity update together once a second, and the refresh ring counts down 1 s.
+- Paper prices tick every second. Each tick's move is scaled so candles keep the same size and still close about every 18 s.
+- MetaApi accounts stay at 5 s, because MetaApi charges each request against a credit allowance and faster polling could get the account throttled.
+- A refresh is skipped instead of overlapping when the previous one hasn't finished, for example on a slow connection to the VPS.
+
 ## [1.12.0] - 2026-11-26
 ### Added
 - **Economic calendar (no key needed).** The app loads the week's ForexFactory calendar and refreshes it every hour. It keeps the last copy on your phone in case the next update fails.
