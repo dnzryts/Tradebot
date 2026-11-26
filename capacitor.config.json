@@ -16,7 +16,7 @@
       "iconColor": "#6c8cff"
     },
     "SystemBars": {
-      "style": "DARK",
+      "style": "DEFAULT",
       "insetsHandling": "css"
     }
   }

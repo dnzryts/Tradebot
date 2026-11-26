@@ -41,7 +41,7 @@ input, select { font: inherit; color: var(--text); }
 .mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
 
 #app { max-width: 520px; margin: 0 auto; min-height: 100%; position: relative; }
-.screen { min-height: 100vh; padding: calc(env(safe-area-inset-top) + 18px) 18px 110px; animation: fade .35s ease; }
+.screen { min-height: 100vh; padding: calc(var(--sat) + 18px) 18px 110px; animation: fade .35s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ===== Typography ===== */
@@ -115,7 +115,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* ===== Bottom nav ===== */
 .nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px;
-  padding: 10px 14px calc(env(safe-area-inset-bottom) + 12px); z-index: 20;
+  padding: 10px 14px calc(var(--sab) + 12px); z-index: 20;
   background: linear-gradient(to top, var(--bg) 60%, transparent); }
 .nav-inner { display: flex; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(18px);
   border: 1px solid var(--line); border-radius: 22px; padding: 6px; box-shadow: 0 12px 30px rgba(0,0,0,.25); }
@@ -181,12 +181,12 @@ canvas { display: block; width: 100%; }
 .swatch.on { border-color: var(--accent); }
 
 /* ===== Toast / modal ===== */
-.toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 14px); transform: translate(-50%, -140%); z-index: 50;
+.toast { position: fixed; left: 50%; top: calc(var(--sat) + 14px); transform: translate(-50%, -140%); z-index: 50;
   background: var(--card); border: 1px solid var(--line); padding: 12px 16px; border-radius: 16px; box-shadow: 0 16px 40px rgba(0,0,0,.35);
   font-weight: 600; font-size: 14px; transition: transform .35s cubic-bezier(.2,.8,.2,1); max-width: 90%; }
 .toast.show { transform: translate(-50%, 0); }
 .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 40; display: flex; align-items: flex-end; justify-content: center; animation: fade .2s; }
-.sheet { width: 100%; max-width: 520px; background: var(--bg2); border-radius: 26px 26px 0 0; padding: 10px 18px calc(env(safe-area-inset-bottom) + 22px); max-height: 88vh; overflow-y: auto; }
+.sheet { width: 100%; max-width: 520px; background: var(--bg2); border-radius: 26px 26px 0 0; padding: 10px 18px calc(var(--sab) + 22px); max-height: 88vh; overflow-y: auto; }
 .sheet .grip { width: 44px; height: 5px; border-radius: 5px; background: var(--card2); margin: 4px auto 14px; }
 .notice { font-size: 12.5px; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--warn) 13%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
 .empty { text-align: center; color: var(--muted); padding: 26px 10px; font-size: 14px; }
@@ -280,7 +280,10 @@ html, body { overflow-x: hidden; }
 #tmode3 { margin-bottom: 4px; }
 
 /* ===== Dashboard equity card: lighter, adjustable opacity (--hero-a set from Profile > Appearance) ===== */
-:root { --hero-a: .65; }
+:root {
+  /* Safe areas: Capacitor's SystemBars injects --safe-area-inset-* on Android (env() is wrong on WebView < 140) */
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px)); --hero-a: .65; }
 .card.hero {
   background: linear-gradient(135deg,
     color-mix(in srgb, var(--accent) calc(var(--hero-a) * 100%), transparent) 0%,
@@ -466,11 +469,11 @@ html.private #eq { display: none; }
 
 /* ===== Landscape (phone on its side, tablets): navigation becomes a side rail ===== */
 @media (orientation: landscape) and (min-width: 640px) {
-  :root { --rail: calc(86px + env(safe-area-inset-left)); }
+  :root { --rail: calc(86px + var(--sal)); }
   #app:has(> .nav) { max-width: none; margin: 0 0 0 var(--rail); }
-  #app:has(> .nav) .screen { max-width: 860px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 22px) 28px 22px; }
+  #app:has(> .nav) .screen { max-width: 860px; margin: 0 auto; padding: calc(var(--sat) + 12px) calc(var(--sar) + 22px) 28px 22px; }
   .nav { top: 0; bottom: 0; left: 0; transform: none; width: var(--rail); max-width: none; display: flex; align-items: center;
-    padding: 10px 8px 10px calc(env(safe-area-inset-left) + 8px); background: linear-gradient(to right, var(--bg) 70%, transparent); }
+    padding: 10px 8px 10px calc(var(--sal) + 8px); background: linear-gradient(to right, var(--bg) 70%, transparent); }
   .nav-inner { flex-direction: column; width: 100%; gap: 2px; padding: 6px 4px; max-height: 100%; overflow-y: auto; }
   .nav button { flex: none; padding: 7px 0; font-size: 10px; }
   .peek { left: var(--rail); width: calc(100vw - var(--rail)); max-width: none; margin-left: 0; }
@@ -486,7 +489,7 @@ html.private #eq { display: none; }
 }
 /* Welcome slides and PIN lock side by side when the phone is on its side */
 @media (orientation: landscape) and (max-height: 560px) {
-  .welcome { padding-top: calc(env(safe-area-inset-top) + 12px); padding-bottom: 14px; max-width: 760px; margin: 0 auto; }
+  .welcome { padding-top: calc(var(--sat) + 12px); padding-bottom: 14px; max-width: 760px; margin: 0 auto; }
   #app:has(> .welcome), #app:has(> .lock) { max-width: 800px; }
   .slide { display: grid; grid-template-columns: 150px minmax(0, 420px); grid-template-rows: auto auto; align-content: center; justify-content: center; text-align: left; column-gap: 36px; }
   .slide .art { grid-row: 1 / span 2; align-self: center; width: 150px; height: 150px; margin: 0; border-radius: 44px; }
@@ -506,15 +509,7 @@ html.private #eq { display: none; }
   .lock .keypad button { height: 50px; font-size: 20px; border-radius: 18px; }
 }
 
-/* Full screen: keep content clear of a camera cutout (sizes come from the native ThemeBars.insets) */
-:root { --cut-top: 0px; --cut-right: 0px; --cut-bottom: 0px; --cut-left: 0px; }
-html.fullscreen #app { padding-left: var(--cut-left); padding-right: var(--cut-right); box-sizing: border-box; }
-html.fullscreen .screen { padding-top: calc(env(safe-area-inset-top) + 18px + var(--cut-top)); }
-html.fullscreen .nav { padding-bottom: calc(env(safe-area-inset-bottom) + 12px + var(--cut-bottom)); }
-html.fullscreen .sheet { padding-bottom: calc(env(safe-area-inset-bottom) + 22px + var(--cut-bottom)); }
-@media (orientation: landscape) and (min-width: 640px) {
-  html.fullscreen { --rail: calc(86px + env(safe-area-inset-left) + var(--cut-left)); }
-  html.fullscreen .nav { padding-left: calc(env(safe-area-inset-left) + var(--cut-left) + 8px); padding-bottom: 10px; }
-  html.fullscreen #app:has(> .nav) { padding-left: 0; }
-  html.fullscreen #app:has(> .nav) .screen { padding-top: calc(env(safe-area-inset-top) + 12px + var(--cut-top)); }
-}
+/* Edge-to-edge: a soft backdrop behind the status bar so scrolled content doesn't collide with the clock and icons */
+body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--sat); z-index: 25; pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+html.bars-hidden body::before { display: none; }

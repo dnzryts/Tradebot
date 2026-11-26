@@ -105,18 +105,17 @@
     document.querySelector('meta[name=theme-color]').content = bg;
     // Native status/navigation bar area: background colour + light or dark icons
     try { themeBars()?.set({ color: bg, light: t === 'light' }); } catch { }
+    // Capacitor's SystemBars decides the status/navigation icon colour: LIGHT = dark icons for a light page
+    try { const C = window.Capacitor; if (C?.isNativePlatform?.()) (C.Plugins?.SystemBars || (S._sb ||= C.registerPlugin?.('SystemBars')))?.setStyle({ style: t === 'light' ? 'LIGHT' : 'DARK' }); } catch { }
   }
   /* Native helper (ThemeBars, registered in MainActivity). registerPlugin is the reliable way to reach it. */
   function themeBars() { const C = window.Capacitor; if (!C?.isNativePlatform?.()) return null; return C.Plugins?.ThemeBars || (S._tb ||= C.registerPlugin?.('ThemeBars')); }
-  /* Full screen: hide the status and navigation bars, then pad the page where a camera cutout overlaps it. */
+  /* The app always draws edge-to-edge (behind transparent status / navigation bars, padded by the safe-area
+     insets). "Hide status & navigation bars" additionally hides them (swipe from an edge to peek). */
   async function applyFullscreen() {
-    const on = S.prefs.fullscreen !== false, tb = themeBars();
-    document.documentElement.classList.toggle('fullscreen', on);
-    if (!tb) return;
-    try {
-      await tb.fullscreen({ on });
-      setTimeout(async () => { try { const i = await tb.insets(); ['top', 'right', 'bottom', 'left'].forEach(k => document.documentElement.style.setProperty('--cut-' + k, (on ? i[k] || 0 : 0) + 'px')); } catch { } }, 350);
-    } catch { }
+    const hide = !!S.prefs.hideBars, tb = themeBars();
+    document.documentElement.classList.toggle('bars-hidden', hide);
+    try { await tb?.fullscreen({ on: hide }); } catch { }
   }
   /* Dashboard equity card opacity: CSS variable + readable text colours when it gets light. */
   function applyHero() {
@@ -1116,7 +1115,7 @@
         <button class="btn small" id="conn">${isLive() ? 'Manage' : 'Connect MT5'}</button></div></div>
       <h3>Appearance</h3><div class="card">
         <div class="seg" id="tmode3"><button data-a="system" class="${S.theme === 'system' ? 'on' : ''}">System</button><button data-a="light" class="${S.theme === 'light' ? 'on' : ''}">Light</button><button data-a="dark" class="${S.theme !== 'system' && S.theme !== 'light' ? 'on' : ''}">Dark</button></div>
-        <div class="row between list-item" style="margin:10px 0 4px"><div><div class="title">Full screen</div><div class="sub">Hide the status and navigation bars. Swipe in from the top or bottom edge to see them briefly.</div></div><label class="toggle"><input type="checkbox" id="pfull" ${S.prefs.fullscreen !== false ? 'checked' : ''}><span></span></label></div>
+        <div class="row between list-item" style="margin:10px 0 4px"><div><div class="title">Hide status & navigation bars</div><div class="sub">The app already fills the screen behind the bars. Turn this on to hide them too; swipe in from an edge to see them briefly.</div></div><label class="toggle"><input type="checkbox" id="pfull" ${S.prefs.hideBars ? 'checked' : ''}><span></span></label></div>
         <p class="hint" id="thint">${S.theme === 'system' ? `Following your phone: currently <b>${systemIsDark() ? 'dark' : 'light'}</b>.` : S.theme === 'light' ? 'Always light.' : 'Always dark.'}</p>
         <div class="field" style="margin:16px 0 0"><div class="row between"><label style="margin:0 0 0 4px">Dashboard card opacity</label>
             <div class="stepper"><button id="hminus" aria-label="Less opaque">−</button><b class="mono" id="heroav">${Math.round(S.heroAlpha * 100)}%</b><button id="hplus" aria-label="More opaque">+</button></div></div>
@@ -1170,7 +1169,7 @@
       if (lv === 'beginner' && !testedState().match && !(await ask({ title: 'Switch to Beginner?', message: 'Beginner mode uses only the tested presets, so your custom bot settings will be reset to the tested Conservative or Balanced values. Your symbols stay.', ok: 'Switch', ic: 'bot' }))) return;
       setLevel(lv); toast(`${LEVELS[lv].label} mode`); log(`Trading experience set to ${LEVELS[lv].label}`); viewProfile(v);
     });
-    $('#pfull').onchange = e => { S.prefs.fullscreen = e.target.checked; save(); applyFullscreen(); };
+    $('#pfull').onchange = e => { S.prefs.hideBars = e.target.checked; save(); applyFullscreen(); };
     $('#pguide').onchange = e => { S.prefs.guideHidden = !e.target.checked; save(); };
     let risk = p.riskProfile;
     $$('#prisk button').forEach(b => b.onclick = () => { risk = b.dataset.k; $$('#prisk button').forEach(x => x.classList.toggle('on', x === b)); });

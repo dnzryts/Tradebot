@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.14.1] - 2026-11-26
+### Changed
+- **True edge-to-edge, like other modern apps.** The page now fills the whole screen. The background runs behind a transparent status bar and navigation bar, and content is padded to sit between them.
+  - The cause: the page didn't declare `viewport-fit=cover`. Without it, Capacitor 8 keeps the app between the bars, and Android filled the bar areas with the app's dark launch colour. That's why they stayed dark in the light theme even with 1.14.0's full-screen setting.
+  - Spacing uses the safe-area sizes Capacitor reports for each phone, so it's right on older Android System WebViews too. Older versions report wrong sizes otherwise.
+  - Status-bar icons now follow the theme: dark icons on the light theme, light icons on the dark theme.
+  - A soft blurred backdrop sits behind the status bar, so content scrolling underneath doesn't collide with the clock and icons.
+- Profile → Appearance: **Hide status & navigation bars** is now optional and off by default. The app fills the screen without it. Turn it on to hide the bars too; swipe in from an edge to see them.
+
 ## [1.14.0] - 2026-11-26
 ### Added
 - **Full screen.** The status bar (clock, battery) and the navigation bar are hidden, so Tradebot uses the whole screen. Swipe in from the top or bottom edge to see them for a moment. They hide again on their own.
