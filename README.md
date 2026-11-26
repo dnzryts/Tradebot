@@ -124,7 +124,7 @@ tradebot/
 
 - The bot runs while the app is open (in the foreground, or recently backgrounded). Android may suspend it in the background. For unattended 24/5 trading, run the strategy server-side (a MetaApi-hosted or VPS script) using the same logic.
 - MetaApi is a paid third-party service; the free alternative is the Own VPS bridge, which needs a Windows machine running MT5.
-- Sentiment is derived mainly from price action. News sentiment (Alpha Vantage) is optional and limited to FX pairs.
+- Sentiment is derived mainly from price action. The economic calendar (ForexFactory, no key) pauses new bot trades around high-impact news. Headline sentiment (Alpha Vantage, optional free key) adds a 20% factor for forex, gold, US indices and crypto. Neither has been backtested.
 - Paper mode runs an accelerated synthetic market (about 18 s per candle) for demonstration. Its results don't predict live performance.
 
 ## License

@@ -277,22 +277,99 @@
   }
 
   /* Optional news sentiment via Alpha Vantage NEWS_SENTIMENT (free key, ~25 calls/day → cached 1h). */
-  const News = {
-    cache: {},
-    async currency(cur, key) {
-      const c = this.cache[cur]; if (c && Date.now() - c.t < 36e5) return c.v;
-      const r = await fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=FOREX:${cur}&limit=50&apikey=${key}`);
-      const j = await r.json(); const feed = j.feed || [];
-      let s = 0, n = 0;
-      feed.forEach(a => (a.ticker_sentiment || []).forEach(t => { if (t.ticker === `FOREX:${cur}`) { s += +t.ticker_sentiment_score * +t.relevance_score; n += +t.relevance_score; } }));
-      const v = n ? Math.max(-1, Math.min(1, (s / n) * 3)) : 0; this.cache[cur] = { t: Date.now(), v }; return v;
+  /* Which currencies move a symbol (for news and the economic calendar). */
+  const CCY = 'EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF';
+  function currenciesOf(sym) {
+    const n = String(sym).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const m = n.match(new RegExp(`^(${CCY})(${CCY})`)); if (m) return [m[1], m[2]];
+    if (/^(XAU|XAG|XPT|XPD|GOLD|SILVER|PLATINUM)/.test(n)) return ['USD'];
+    if (/(OIL|WTI|BRENT|NGAS|NATGAS|GASOLINE)/.test(n)) return ['USD'];
+    if (/^(US30|US500|US100|USTEC|NAS|SPX|SP500|DJ|WS30|US2000)/.test(n)) return ['USD'];
+    if (/^(GER|DE40|DAX|FRA40|EU50|STOXX)/.test(n)) return ['EUR'];
+    if (/^(UK100|FTSE)/.test(n)) return ['GBP'];
+    if (/^(JP225|NIKKEI)/.test(n)) return ['JPY'];
+    if (/^AUS200/.test(n)) return ['AUD'];
+    if (/^(BTC|ETH|LTC|XRP|SOL)/.test(n)) return ['USD'];
+    return [];
+  }
+  const ls = { get: (k, d) => { try { return JSON.parse(localStorage.getItem('tb_' + k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem('tb_' + k, JSON.stringify(v)); } catch { } } };
+
+  /* Economic calendar: the free weekly ForexFactory feed (no key). Refreshed hourly and kept on the phone. */
+  const Calendar = {
+    url: 'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
+    data: ls.get('calendar', { t: 0, events: [] }), error: '',
+    async refresh(force) {
+      if (!force && Date.now() - this.data.t < 36e5 && this.data.events.length) return this.data.events;
+      try {
+        const r = await fetch(this.url); if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json(); if (!Array.isArray(j)) throw new Error('Unexpected calendar format');
+        const events = j.map(e => ({ title: e.title, ccy: e.country, time: Date.parse(e.date), impact: e.impact, forecast: e.forecast || '', previous: e.previous || '' })).filter(e => e.time);
+        this.data = { t: Date.now(), events }; ls.set('calendar', this.data); this.error = '';
+      } catch (e) { this.error = e.message; this.data.t = Date.now() - 30 * 6e4; }   // retry in ~30 min
+      return this.data.events;
     },
-    async forSymbol(sym, key) {
-      if (!key || !/^[A-Z]{6}$/.test(sym)) return undefined;
-      try { const [b, q] = await Promise.all([this.currency(sym.slice(0, 3), key), this.currency(sym.slice(3), key)]); return Math.max(-1, Math.min(1, b - q)); }
-      catch { return undefined; }
+    /* Upcoming (and just-released) events for the given currencies. */
+    upcoming(ccys, { from = Date.now() - 36e5, impacts = ['High', 'Medium'], limit = 50 } = {}) {
+      return this.data.events.filter(e => e.time >= from && impacts.includes(e.impact) && (!ccys || ccys.includes(e.ccy))).sort((a, b) => a.time - b.time).slice(0, limit);
+    },
+    /* A high-impact event for this symbol within [−after, +before] of now → the event, else null. */
+    blackout(sym, beforeMin = 30, afterMin = 30) {
+      const c = currenciesOf(sym), now = Date.now();
+      return this.data.events.find(e => e.impact === 'High' && c.includes(e.ccy) && e.time - beforeMin * 6e4 <= now && now <= e.time + afterMin * 6e4) || null;
     },
   };
 
-  global.Brokers = { DemoBroker, MetaApiBroker, BridgeBroker, News, SPECS };
+  /* News sentiment from Alpha Vantage (optional free key: 25 requests/day).
+     One request every 90 min (16/day), rotating through three news topics; articles from the last 24 h are pooled
+     and scored per currency, newer and more relevant articles weighing more. Kept on the phone between launches. */
+  const News = {
+    TOPICS: ['economy_monetary', 'financial_markets', 'economy_macro'],
+    st: ls.get('news', { t: 0, i: 0, articles: [], status: '' }),
+    async refresh(key, force) {
+      if (!key) return;
+      if (!force && Date.now() - this.st.t < 90 * 6e4) return;
+      const topic = this.TOPICS[this.st.i % this.TOPICS.length];
+      this.st.t = Date.now();
+      try {
+        const r = await fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=${topic}&sort=LATEST&limit=200&apikey=${encodeURIComponent(key)}`);
+        const j = await r.json();
+        if (!j.feed) { const msg = j.Information || j.Note || j['Error Message'] || 'No news returned'; this.st.status = /limit|frequency|premium/i.test(msg) ? 'Daily request limit reached; retrying later' : msg; this.st.t = Date.now() + 90 * 6e4; ls.set('news', this.st); return; }
+        const parseT = s => Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8), +s.slice(9, 11), +s.slice(11, 13));
+        const fresh = j.feed.map(a => ({ title: a.title, url: a.url, source: a.source, time: parseT(a.time_published || ''), overall: +a.overall_sentiment_score || 0, label: a.overall_sentiment_label || '',
+          topics: (a.topics || []).map(t => t.topic), tick: (a.ticker_sentiment || []).filter(t => /^(FOREX|CRYPTO):/.test(t.ticker)).map(t => ({ k: t.ticker, s: +t.ticker_sentiment_score, r: +t.relevance_score })) }));
+        const seen = new Set(), cutoff = Date.now() - 864e5;
+        this.st.articles = [...fresh, ...this.st.articles].filter(a => a.time > cutoff && !seen.has(a.url) && seen.add(a.url)).slice(0, 400);
+        this.st.i++; this.st.status = ''; this.st.ok = Date.now();
+      } catch (e) { this.st.status = 'News unavailable: ' + e.message; }
+      ls.set('news', this.st);
+    },
+    /* Weighted sentiment for a ticker like FOREX:USD, −1…1, or undefined when there is no recent coverage. */
+    score(ticker) {
+      let s = 0, w = 0, n = 0; const now = Date.now();
+      this.st.articles.forEach(a => a.tick.forEach(t => { if (t.k === ticker) { const wt = t.r * Math.pow(.5, (now - a.time) / 216e5); s += t.s * wt; w += wt; n++; } }));
+      // ±0.35 is Alpha Vantage's "Bullish"/"Bearish" line → ±1; thin coverage is shrunk towards 0 (full weight from 8 articles)
+      return n >= 2 && w > 0 ? Math.max(-1, Math.min(1, (s / w) / .35)) * Math.min(1, n / 8) : undefined;
+    },
+    marketScore() {
+      let s = 0, w = 0; const now = Date.now(), l = this.st.articles.filter(a => a.topics.includes('financial_markets'));
+      l.forEach(a => { const wt = Math.pow(.5, (now - a.time) / 216e5); s += a.overall * wt; w += wt; });
+      return l.length >= 2 && w > 0 ? Math.max(-1, Math.min(1, (s / w) / .35)) * Math.min(1, l.length / 8) : undefined;
+    },
+    /* Per-symbol news factor: FX = base − quote; gold/silver move against USD; US indices = market tone; crypto = its coin. */
+    forSymbol(sym, key) {
+      if (!key) return undefined;
+      const n = String(sym).toUpperCase().replace(/[^A-Z0-9]/g, ''), c = currenciesOf(sym);
+      if (c.length === 2) { const a = this.score('FOREX:' + c[0]), b = this.score('FOREX:' + c[1]); return a == null && b == null ? undefined : Math.max(-1, Math.min(1, ((a || 0) - (b || 0)) / 2)); }
+      if (/^(XAU|XAG|GOLD|SILVER)/.test(n)) { const u = this.score('FOREX:USD'); return u == null ? undefined : -u; }
+      if (/^(US30|US500|US100|USTEC|NAS|SPX|SP500|DJ|WS30)/.test(n)) return this.marketScore();
+      const cr = n.match(/^(BTC|ETH|LTC|XRP|SOL)/); if (cr) return this.score('CRYPTO:' + cr[1]);
+      return undefined;
+    },
+    headlines(sym, limit = 20) {
+      const c = sym ? currenciesOf(sym).map(x => 'FOREX:' + x) : null;
+      return this.st.articles.filter(a => !c || a.tick.some(t => c.includes(t.k))).sort((a, b) => b.time - a.time).slice(0, limit);
+    },
+  };
+
+  global.Brokers = { DemoBroker, MetaApiBroker, BridgeBroker, News, Calendar, currenciesOf, SPECS };
 })(window);

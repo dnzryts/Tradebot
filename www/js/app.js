@@ -29,7 +29,7 @@
   const HTF = { '5m': '1h', '15m': '1h', '1h': '4h', '4h': '1d' };
   const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
   const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1, TRAIL_R = 1;
-  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
+  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, newsPause: true, ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
 
@@ -52,7 +52,7 @@
   }
   function setLevel(lv) {
     S.profile.level = lv; const b = S.bot;
-    if (lv === 'beginner') { applyTested(['conservative', 'balanced'].includes(b.profile) ? b.profile : 'conservative'); Object.assign(b, { basketTp: 0, basketSl: 0, intervalSec: 10 }); }
+    if (lv === 'beginner') { b.newsPause = true; applyTested(['conservative', 'balanced'].includes(b.profile) ? b.profile : 'conservative'); Object.assign(b, { basketTp: 0, basketSl: 0, intervalSec: 10 }); }
     if (lv === 'moderate' && b.timeframe === '5m') b.timeframe = '15m';
     save(); S.candleCache = {};
   }
@@ -510,6 +510,7 @@
       </div>
       ${level() !== 'pro' && !S.prefs.guideHidden && guideSteps().some((x, i) => i < 4 && !x.done) ? `<div class="card guidecard" data-guide data-key="guide">${guideCardHtml()}</div>` : ''}
       ${liveTradesHtml()}
+      <div class="card" id="newscard" data-key="newscard">${newsCardHtml()}</div>
       <div class="card"><div class="row between"><h2 style="font-size:17px">Market sentiment</h2><span class="chip ${sentCls(mood.score)}">${mood.label}</span></div>
         <div class="gauge-wrap">${gauge(mood.score)}<div class="grow">
           <div class="sub">Bullish symbols</div><div class="title up" style="font-size:20px">${mood.bulls}</div>
@@ -627,6 +628,48 @@
     if (S.marketVisible.join() !== before && !S._mktPending) { S._mktPending = true; setTimeout(() => { S._mktPending = false; analyseAll(); }, 250); }
   }
 
+  /* ---------- News & economic calendar ---------- */
+  const relTime = t => { const m = Math.round((t - Date.now()) / 6e4), a = Math.abs(m), s = a < 60 ? `${a}m` : a < 1440 ? `${Math.floor(a / 60)}h${a % 60 ? ' ' + (a % 60) + 'm' : ''}` : `${Math.floor(a / 1440)}d`; return a < 1 ? 'now' : m > 0 ? `in ${s}` : `${s} ago`; };
+  const clock = t => { const d = new Date(t), today = new Date().toDateString() === d.toDateString(); return (today ? '' : d.toLocaleDateString([], { weekday: 'short' }) + ' ') + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+  const watchCcys = () => [...new Set(watch().flatMap(Brokers.currenciesOf))];
+  const evRow = e => `<div class="ev ${e.time < Date.now() ? 'past' : ''}"><span class="imp ${e.impact.toLowerCase()}" title="${e.impact} impact"></span>
+    <div class="grow"><div class="title">${esc(e.title)} <span class="chip mini">${e.ccy}</span></div><div class="sub">${clock(e.time)} · ${relTime(e.time)}${e.forecast || e.previous ? ` · forecast ${esc(e.forecast || '—')} · prev ${esc(e.previous || '—')}` : ''}</div></div></div>`;
+  const toneChip = (k, v) => v == null ? '' : `<span class="chip mini ${v > .1 ? 'up' : v < -.1 ? 'down' : 'neutral'}">${k} ${v > 0 ? '+' : ''}${Math.round(v * 100)}</span>`;
+  function newsCardHtml() {
+    const C = Brokers.Calendar, ccys = watchCcys(), up = C.upcoming(ccys, { from: Date.now() - 30 * 6e4 }).filter(e => e.time < Date.now() + 864e5).slice(0, 3);
+    const paused = S.bot.newsPause ? watch().map(s => [s, C.blackout(s)]).filter(([, e]) => e) : [];
+    const tone = S.newsKey ? ccys.map(c => toneChip(c, Brokers.News.score('FOREX:' + c))).join('') : '';
+    return `<div class="row between"><h2 style="font-size:17px">News & events</h2><button class="sub linkbtn" data-news>All news ›</button></div>
+      ${paused.length ? `<div class="notice" style="margin:10px 0">⏸ Bot is not opening trades on <b>${paused.map(([s]) => s).join(', ')}</b> around <b>${paused[0][1].ccy} ${esc(paused[0][1].title)}</b> (${clock(paused[0][1].time)}). It resumes 30 min after.</div>` : ''}
+      ${up.length ? up.map(evRow).join('') : `<div class="sub" style="padding:10px 0">${C.data.events.length ? `No high- or medium-impact news for ${ccys.join(', ') || 'your symbols'} in the next 24 h.` : C.error ? 'Economic calendar unavailable right now.' : 'Loading economic calendar…'}</div>`}
+      ${tone ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><span class="sub">News tone</span>${tone}</div>` : S.newsKey ? '' : `<div class="sub" style="margin-top:8px">Add a free news key in Profile → News to include headline sentiment.</div>`}`;
+  }
+  function openNews(tab = 'calendar', scope = 'mine') {
+    const C = Brokers.Calendar, N = Brokers.News;
+    const body = () => {
+      if (tab === 'calendar') {
+        const ev = C.upcoming(scope === 'mine' ? watchCcys() : null, { from: Date.now() - 6 * 36e5, impacts: ['High', 'Medium', 'Holiday'], limit: 200 });
+        const days = {}; ev.forEach(e => (days[new Date(e.time).toDateString()] ||= []).push(e));
+        return `<div class="seg" id="nscope" style="margin-bottom:10px"><button data-s="mine" class="${scope === 'mine' ? 'on' : ''}">My symbols (${watchCcys().join(', ')})</button><button data-s="all" class="${scope === 'all' ? 'on' : ''}">All currencies</button></div>
+          ${Object.entries(days).map(([d, l]) => `<div class="sub daylbl">${new Date(l[0].time).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' })}</div>${l.map(evRow).join('')}`).join('') || '<div class="empty">No high- or medium-impact events left this week.</div>'}
+          <p class="hint"><span class="imp high"></span> High impact: the bot pauses new trades 30 min before until 30 min after (if <i>Pause around news</i> is on). <span class="imp medium"></span> Medium impact is shown for information. Times are in your phone's time zone. Source: ForexFactory weekly calendar${C.data.t ? `, updated ${relTime(C.data.t)}` : ''}.</p>`;
+      }
+      if (!S.newsKey) return `<div class="empty">Headlines need a free Alpha Vantage key.<br>Add one in <b>Profile → News</b>.</div>`;
+      const h = N.headlines(null, 40);
+      return `${N.st.status ? `<div class="notice" style="margin-bottom:10px">${esc(N.st.status)}</div>` : ''}
+        ${h.map(a => `<a class="headline" href="${esc(a.url)}" target="_blank" rel="noopener"><div class="title">${esc(a.title)}</div><div class="sub">${esc(a.source)} · ${relTime(a.time)} ${a.tick.slice(0, 3).map(t => toneChip(t.k.split(':')[1], Math.max(-1, Math.min(1, t.s / .35)))).join(' ')}</div></a>`).join('') || '<div class="empty">No headlines yet. They refresh every 90 minutes.</div>'}
+        <p class="hint">Alpha Vantage news sentiment, last 24 h. The bot uses it as one factor (20% weight) in each symbol's score.</p>`;
+    };
+    const bg = sheet(`<h2>Market news</h2><div class="seg" id="ntab" style="margin:8px 0 12px"><button data-t="calendar" class="${tab === 'calendar' ? 'on' : ''}">Economic calendar</button><button data-t="headlines" class="${tab === 'headlines' ? 'on' : ''}">Headlines</button></div><div id="newsbody"></div>`, null, 'newssheet');
+    const draw = () => { $('#newsbody', bg).innerHTML = body(); $$('#ntab button', bg).forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+      $$('#nscope button', bg).forEach(b => b.onclick = () => { scope = b.dataset.s; draw(); }); };
+    $$('#ntab button', bg).forEach(b => b.onclick = () => { tab = b.dataset.t; draw(); });
+    draw();
+  }
+  document.addEventListener('click', e => { if (e.target.closest('[data-news]')) openNews(); });
+  const symEventsHtml = sym => { const l = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now() - 30 * 6e4 }).filter(e => e.time < Date.now() + 2 * 864e5).slice(0, 3);
+    return l.length ? `<div class="card" style="background:var(--card2);margin-bottom:10px"><div class="row between"><div class="sub">Upcoming news for ${Brokers.currenciesOf(sym).join(' / ')}</div><button class="sub linkbtn" data-news>Calendar ›</button></div>${l.map(evRow).join('')}</div>` : ''; };
+
   /* ---------- Trade detail: chart with entry / SL / TP and projected P/L ---------- */
   document.addEventListener('click', e => {
     const t = e.target.closest('[data-trade]'); if (!t || e.target.closest('[data-close],[data-closeall],button:not(.linkbtn)')) return;
@@ -679,6 +722,7 @@
         <div class="stat"><div class="lbl">Reward : risk</div><div class="val">${tpUsd != null && riskUsd ? fmt(tpUsd / riskUsd, 1) + ' : 1' : '—'}</div></div>
         <div class="stat"><div class="lbl">Now in R</div><div class="val mono ${cls(p.profit)}">${riskUsd ? (p.profit >= 0 ? '+' : '') + fmt(p.profit / riskUsd, 2) + 'R' : '—'}</div></div></div>
       ${trail ? `<p class="hint" style="margin-top:10px">${trail}</p>` : ''}
+      ${(() => { const e = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now() - 15 * 6e4, impacts: ['High'] }).find(x => x.time < Date.now() + 2 * 36e5); return e ? `<div class="notice" style="margin-top:10px">⚠ <b>${e.ccy} ${esc(e.title)}</b> ${relTime(e.time)} (${clock(e.time)}). High-impact news can make the price jump past a stop-loss or take-profit.</div>` : ''; })()}
       <p class="hint">P/L at each level is projected from the current price and lot size. Spread, commission and swap are not included${p.swap ? ` (swap so far ${signed(p.swap)})` : ''}.</p>
       <div class="grid2" style="margin-top:6px"><button class="btn ghost" id="tsym">Analysis & new order</button><button class="btn danger" data-close="${p.id}">Close trade</button></div>`, 'trade:' + p.id);
     bindPositions(body);
@@ -708,6 +752,7 @@
       ${a ? `<span class="chip ${sentCls(a.score)}">${a.score > 0 ? '+' : ''}${a.score} · ${a.label}</span>` : ''}</div>
       <div class="chart-box" style="margin:12px 0"><canvas id="symchart" height="230"></canvas></div>
       ${a ? (() => { const d = botDecision(sym)[1]; return `<div class="card row between" style="background:var(--card2);margin-bottom:10px"><div><div class="sub">${Engine.REGIME_LABEL[a.regime]} market · ${S.bot.strategy === 'auto' ? 'Auto picks' : 'Strategy'}</div><div class="title">${Engine.STRATEGIES[d.strategy].icon} ${Engine.STRATEGIES[d.strategy].label} <span class="sub">${esc(d.why)}</span></div></div><span class="chip ${d.action === 'BUY' ? 'up' : d.action === 'SELL' ? 'down' : 'neutral'}">${d.action}</span></div>`; })() : ''}
+      ${symEventsHtml(sym)}
       ${a ? `<div class="grid3" style="margin-bottom:10px"><div class="stat"><div class="lbl">Signal</div><div class="val ${a.signal === 'BUY' ? 'up' : a.signal === 'SELL' ? 'down' : ''}">${a.signal}</div></div>
         <div class="stat"><div class="lbl">Confidence</div><div class="val">${a.confidence}%</div></div><div class="stat"><div class="lbl">RSI</div><div class="val">${fmt(a.rsi, 1)}</div></div></div>
         <div class="card" style="background:var(--card2)">${a.factors.map(f => `<div class="factor"><span class="muted">${f.key}</span><div class="bar"><i style="left:${f.v < 0 ? 50 + f.v / 2 : 50}%;width:${Math.abs(f.v) / 2}%;background:${f.v >= 0 ? 'var(--up)' : 'var(--down)'}"></i><i style="left:50%;width:1px;background:var(--muted)"></i></div><span class="mono right ${cls(f.v)}">${f.v > 0 ? '+' : ''}${f.v}</span></div>`).join('')}</div>` : '<div class="empty">Analysing…</div>'}
@@ -763,6 +808,7 @@
         ${slider('slAtr', 'Stop-loss (× ATR)', .5, 5, .1)}
         ${slider('tpAtr', 'Take-profit (× ATR)', .5, 8, .1)}</div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Follow the bigger trend</div><div class="sub" id="htfsub">Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down</div></div><label class="toggle"><input type="checkbox" id="htf" ${b.htfFilter ? 'checked' : ''}><span></span></label></div>
+        <div class="row between" style="margin-bottom:14px"><div><div class="title">Pause around high-impact news</div><div class="sub">No new trades from 30 min before until 30 min after big news for the symbol's currencies (rate decisions, CPI, jobs reports)</div></div><label class="toggle"><input type="checkbox" id="npause" ${b.newsPause ? 'checked' : ''}><span></span></label></div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Protect profits</div><div class="sub">Trailing stop: once a trade is up by the amount it risks, its stop-loss follows the price at that distance, locking in profit</div></div><label class="toggle"><input type="checkbox" id="trail" ${b.trailing ? 'checked' : ''}><span></span></label></div>
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
       </div></div>
@@ -799,6 +845,7 @@
     $$('#preset button').forEach(x => x.onclick = () => { applyTested(x.dataset.k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
     $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; save(); analyseAll(); });
+    $('#npause').onchange = e => { b.newsPause = e.target.checked; save(); log(b.newsPause ? 'Pause around high-impact news: on' : 'Pause around high-impact news: off'); };
     $('#trail').onchange = e => { b.trailing = e.target.checked; save(); log(b.trailing ? 'Protect profits on (trailing stop)' : 'Protect profits off'); };
     $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
     bindTested(v);
@@ -1056,8 +1103,11 @@
         <div class="row between list-item"><div><div class="title">Fingerprint unlock</div><div class="sub">Require biometrics to open the app</div></div><label class="toggle"><input type="checkbox" id="pbio" ${p.biometric ? 'checked' : ''}><span></span></label></div>
         <div class="row between list-item"><div><div class="title">Change PIN</div><div class="sub">6-digit fallback PIN</div></div><button class="btn small ghost" id="ppin">Change</button></div>
         <div class="row between list-item"><div><div class="title">Lock now</div></div><button class="btn small ghost" id="plock">Lock</button></div></div>
-      <h3>News sentiment (optional)</h3><div class="card"><div class="field"><label>Alpha Vantage API key</label><input class="input mono" id="nkey" value="${esc(S.newsKey)}" placeholder="Free key from alphavantage.co"></div>
-        <div class="hint">Adds a news-sentiment factor (20% weight) for FX pairs. Cached hourly to fit the free quota.</div><button class="btn ghost" id="nsave" style="margin-top:10px">Save key</button></div>
+      <h3>News</h3><div class="card">
+        <div class="row between list-item"><div><div class="title">Economic calendar</div><div class="sub">${Brokers.Calendar.data.events.length ? `${Brokers.Calendar.data.events.length} events this week · updated ${relTime(Brokers.Calendar.data.t)}` : Brokers.Calendar.error ? 'Unavailable: ' + esc(Brokers.Calendar.error) : 'Loading…'} · no key needed</div></div><button class="btn small ghost" data-news>Open</button></div>
+        <div class="field" style="margin-top:10px"><label>Headline sentiment · Alpha Vantage key (optional)</label><input class="input mono" id="nkey" value="${esc(S.newsKey)}" placeholder="Free key from alphavantage.co"></div>
+        <div class="hint">Adds a news factor (20% weight) to each symbol's score: currency tone for forex, USD tone (inverted) for gold and silver, market tone for US indices, coin tone for crypto. The free key allows 25 requests a day, so headlines refresh every 90 minutes (16 a day).${S.newsKey ? ` Status: ${Brokers.News.st.status ? esc(Brokers.News.st.status) : Brokers.News.st.ok ? `${Brokers.News.st.articles.length} articles, updated ${relTime(Brokers.News.st.ok)}` : 'waiting for first update'}.` : ''}</div>
+        <button class="btn ghost" id="nsave" style="margin-top:10px">Save key</button></div>
       <h3>Data</h3><div class="card">${S.conn.mode === 'demo' ? '<button class="btn ghost" id="reset" style="margin-bottom:10px">Reset paper account</button>' : ''}<button class="btn danger" id="wipe">Sign out & erase app data</button></div>
       <h3>About</h3><div class="card about" id="about">${aboutHtml()}</div>
       <p class="hint" style="text-align:center;margin-top:12px">Not financial advice. Trading leveraged products carries a high risk of loss.</p>
@@ -1095,7 +1145,7 @@
     $('#pnow').onchange = e => setPrivacy(e.target.checked, true);
     $$('#cconf button').forEach(b => b.onclick = () => { S.prefs.confirmClose = b.dataset.c; save(); $$('#cconf button').forEach(x => x.classList.toggle('on', x === b)); toast(b.dataset.c === 'off' ? 'Close confirmation off' : b.dataset.c === 'loss' ? 'Confirm closing losing trades' : 'Confirm closing every trade'); });
     $('#plock').onclick = () => { S.unlocked = false; render(); };
-    $('#nsave').onclick = () => { S.newsKey = $('#nkey').value.trim(); store.set('newsKey', S.newsKey); toast(S.newsKey ? 'News sentiment enabled' : 'News sentiment off'); };
+    $('#nsave').onclick = async () => { S.newsKey = $('#nkey').value.trim(); store.set('newsKey', S.newsKey); toast(S.newsKey ? 'News sentiment enabled' : 'News sentiment off'); if (S.newsKey) { await Brokers.News.refresh(S.newsKey, true); viewProfile(v); analyseAll(); } };
     const r = $('#reset'); if (r) r.onclick = async () => { if (await ask({ title: 'Reset paper account?', message: 'Balance goes back to $10,000 and paper positions and history are cleared.', ok: 'Reset', tone: 'danger', ic: 'wallet' })) { S.broker.reset(); log('Paper account reset'); poll(); toast('Paper account reset'); } };
     $('#wipe').onclick = async () => { if (!(await ask({ title: 'Sign out & erase data?', message: 'Your profile, PIN, settings and stored MetaApi token are removed from this device. Your MT5 account is not affected.', ok: 'Erase', tone: 'danger', ic: 'user' }))) return; await Security.deleteSecret('metaapi'); Object.keys(localStorage).filter(k => k.startsWith('tb')).forEach(k => localStorage.removeItem(k)); location.reload(); };
   }
@@ -1383,11 +1433,12 @@
   async function analyseAll() {
     if (!S.broker) return;
     const syms = [...new Set([...watch(), ...(S.tab === 'markets' ? (S.marketVisible || []).slice(0, 30) : [])])];
+    await Promise.all([Brokers.Calendar.refresh(), Brokers.News.refresh(S.newsKey)]).catch(() => { });
     await Promise.all(syms.map(async s => {
       try {
         const c = await S.broker.getCandles(s, S.bot.timeframe, 200); S.candleCache[s] = c;
         if (S.conn.mode !== 'demo' && !(s in (S.digitsOf ||= {}))) { try { S.digitsOf[s] = (await S.broker.getSpec(s)).digits; } catch { } }
-        const news = await Brokers.News.forSymbol(s, S.newsKey);
+        const news = Brokers.News.forSymbol(s, S.newsKey);
         S.analysis[s] = Engine.analyse(c, { threshold: S.bot.threshold, news });
         // The bot decides on CLOSED candles only: the last candle is still forming and its
         // score swings tick by tick, which made the bot enter and exit on noise.
@@ -1420,6 +1471,8 @@
   function botDecision(sym) {
     const a = S.botAnalysis?.[sym] || S.analysis[sym], d = Engine.decide(a, S.bot.strategy, S.mood, S.bot);
     if (d.action !== 'HOLD' && htfOk(sym, d.action) === false) { d.why += ` · ${HTF[S.bot.timeframe]} trend against`; d.blocked = d.action; d.action = 'HOLD'; }
+    const ev = S.bot.newsPause ? Brokers.Calendar.blackout(sym) : null;
+    if (ev) { d.why = `⏸ News pause: ${ev.ccy} ${ev.title} ${relTime(ev.time)}`; d.news = ev; if (d.action !== 'HOLD') { d.blocked = d.action; d.action = 'HOLD'; } }
     return [a, d];
   }
 

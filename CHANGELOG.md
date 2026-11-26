@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.12.0] - 2026-11-26
+### Added
+- **Economic calendar (no key needed).** The app loads the week's ForexFactory calendar and refreshes it every hour. It keeps the last copy on your phone in case the next update fails.
+  - **The bot pauses around high-impact news.** New trades for a symbol are skipped from 30 min before until 30 min after a high-impact event for its currencies. For example, US CPI or Non-Farm Payrolls pause USD pairs, gold, US indices and crypto, and an ECB decision pauses EUR pairs and GER40. Open trades keep their stops and targets.
+  - The pause is on by default and always on at Beginner level. It's in Auto-Trade → Strategy settings (Moderate and Pro).
+  - The strategy radar shows it, for example "⏸ News pause: USD CPI m/m in 12m".
+  - **News & events card on Home:** the next high- and medium-impact events for your symbols' currencies, with countdown, forecast and previous value, a banner when the bot is pausing, and the news tone per currency.
+  - **Market news panel** (Home → All news, Profile → News, or a symbol's panel): the week's calendar grouped by day (your currencies or all), plus Headlines.
+  - **Symbol panel:** upcoming events for that symbol's currencies.
+  - **Trade chart:** a warning when high-impact news is due within 2 h, since prices can jump past a stop-loss or take-profit.
+- **Headlines** tab: the latest articles with their per-currency tone, for anyone with an Alpha Vantage key. Tap one to open it.
+
+### Fixed
+- **News sentiment stopped working after a few hours.** It made one request per currency every hour, which used up the free 25-a-day Alpha Vantage limit early. After that every score silently became 0.
+  - It now makes one request every 90 min (16 a day), rotating between monetary-policy, markets and macro news.
+  - It keeps a 24-hour pool of articles on the phone and shows a clear message when the limit is reached.
+- News sentiment covers more than forex pairs now:
+  - Gold and silver use the dollar's tone, inverted.
+  - US indices use the overall market tone.
+  - Crypto uses the coin's own tone.
+- **A handful of articles could push the news factor to its maximum.** It now scales with how much coverage there is, reaching full strength at 8 or more recent articles.
+
 ## [1.11.0] - 2026-11-25
 ### Added
 - **Trade detail chart.** Tap any open trade, in Portfolio → Open positions or on a Dashboard live-trade card, to open its chart.

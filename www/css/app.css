@@ -448,3 +448,18 @@ html.private #eq { display: none; }
 .lvl > :last-child, .lvl.head > :last-child { text-align: right; }
 .lvl .lvlname { font-weight: 700; }
 .lvl .lvlname.up { color: var(--up); } .lvl .lvlname.down { color: var(--down); } .lvl .lvlname.muted { color: var(--muted); }
+
+/* News & economic calendar */
+.ev { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; }
+.ev + .ev { border-top: 1px solid var(--line); }
+.ev.past { opacity: .5; }
+.ev .title { font-size: 14px; }
+.imp { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--muted); }
+.imp.high { background: var(--down); } .imp.medium { background: var(--warn); } .imp.low { background: var(--muted); } .imp.holiday { background: var(--accent); }
+.hint .imp { margin: 0 2px 0 6px; width: 8px; height: 8px; }
+.chip.mini { font-size: 10px; padding: 2px 6px; vertical-align: middle; }
+.daylbl { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; margin: 12px 0 2px; }
+.headline { display: block; padding: 10px 0; border-top: 1px solid var(--line); color: inherit; text-decoration: none; }
+.headline:first-of-type { border-top: 0; }
+.headline .title { font-size: 14px; line-height: 1.35; }
+.headline .chip { margin-left: 4px; }

@@ -15,7 +15,7 @@ For every watched symbol, the engine loads 200 candles on the selected timeframe
 | **ROC** | 10% | 10-bar rate of change relative to volatility |
 | **Flow** | 10% | Tick-volume-weighted up candles vs down candles over the last 20 bars |
 | **Reversion** | 10% | Contrarian brake: RSI > 75 or above the upper Bollinger band counts bearish; RSI < 25 or below the lower band counts bullish |
-| **News** *(optional)* | 20% | Alpha Vantage `NEWS_SENTIMENT`, base-currency score minus quote-currency score (FX pairs only, cached 1 h) |
+| **News** *(optional)* | 20% | Alpha Vantage `NEWS_SENTIMENT`, last 24 h of articles, newer and more relevant ones weighted higher (6 h half-life), shrunk towards 0 with fewer than 8 articles. Forex: (base − quote) ÷ 2. Gold/silver: −USD tone. US indices: tone of `financial_markets` articles. Crypto: the coin's tone. One request every 90 min, rotating topics, within the free 25-a-day limit |
 
 `score = round(100 × Σ(factor × weight) / Σweights)` → **−100 … +100**
 
@@ -91,8 +91,9 @@ A trade opens when **all** of these are true:
 3. `confidence ≥ min confidence`
 4. There is no open position on that symbol already
 5. Bot positions are below **max open positions**
-6. **Follow the bigger trend** (on by default): on the next timeframe up (5m/15m → 1h, 1h → 4h, 4h → 1d), EMA20 is above EMA50 for a BUY, below for a SELL
-7. **Spread guard**: the current spread is at most 10% of the stop-loss distance
+6. **No high-impact news nearby** (*Pause around high-impact news*, on by default): no ForexFactory high-impact event for the symbol's currencies from 30 min before until 30 min after it (e.g. US CPI and NFP block USD pairs, gold, US indices and crypto; ECB blocks EUR pairs and GER40). Open trades are kept, and their stops and targets stay in place.
+7. **Follow the bigger trend** (on by default): on the next timeframe up (5m/15m → 1h, 1h → 4h, 4h → 1d), EMA20 is above EMA50 for a BUY, below for a SELL
+8. **Spread guard**: the current spread is at most 10% of the stop-loss distance
 
 Candidates are ranked by `|score|`, so the strongest signals fill the free slots first.
 
@@ -164,4 +165,4 @@ What this showed:
 
 ## 7. Honest caveats
 
-This is a rules-based technical model. The backtest above covers one data source, three symbols and about 16 months; it ignores commission, swaps, slippage and the market-mood overlay, and a thin edge like this can disappear in other conditions. Paper mode uses a **random** price simulator, so paper results say nothing about the strategy, good or bad. Before trusting it with money, forward-test it on a demo account for weeks across different market regimes.
+This is a rules-based technical model. The backtest above covers one data source, three symbols and about 16 months; it ignores commission, swaps, slippage, the market-mood overlay, news sentiment and the news pause (no historical news was available to test them), and a thin edge like this can disappear in other conditions. Paper mode uses a **random** price simulator, so paper results say nothing about the strategy, good or bad. Before trusting it with money, forward-test it on a demo account for weeks across different market regimes.
