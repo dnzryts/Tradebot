@@ -678,7 +678,7 @@
   const J = { list: store.get('journal') || [], ver: 0, cache: {}, arcN: null };
   const arcCount = () => J.arcN ??= (store.get('journalArc') || []).length;
   /* Archived entries keep only what stats and the journal list need (about half the size). */
-  const compact = e => ({ sym: e.sym, side: e.side, src: e.src, t: e.t, acct: e.acct, lot: e.lot, ctx: e.ctx && { strategy: e.ctx.strategy, regime: e.ctx.regime, score: e.ctx.score, conf: e.ctx.conf }, out: { t: e.out.t, profit: e.out.profit, r: e.out.r, why: e.out.why, mins: e.out.mins } });
+  const compact = e => ({ id: e.id, imp: e.imp, sym: e.sym, side: e.side, src: e.src, t: e.t, acct: e.acct, lot: e.lot, ctx: e.ctx && { strategy: e.ctx.strategy, regime: e.ctx.regime, score: e.ctx.score, conf: e.ctx.conf }, out: { t: e.out.t, profit: e.out.profit, r: e.out.r, why: e.out.why, mins: e.out.mins } });
   const acctKey = () => S.conn?.mode === 'demo' || !S.conn?.mode ? 'paper' : `${S.conn.mode}:${S.conn.login || S.conn.accountId || ''}`;
   function jSave() {
     J.ver++; J.cache = {};
@@ -693,7 +693,7 @@
           const t = (tot[e.acct + '|' + k] ||= { n: 0, w: 0, r: 0, usd: 0 }); t.n++; if (e.out.profit > 0) t.w++; t.r += e.out.r || 0; t.usd += e.out.profit; }));
         store.set('journalTotals', tot);
       }
-      store.set('journalArc', arc); J.arcN = arc.length;
+      store.set('journalArc', arc); J.arcN = arc.length; J.arcIds = null;
       J.list = J.list.filter(e => !move.has(e));
     }
     store.set('journal', J.list);
@@ -701,7 +701,7 @@
   /* Remove one account's entries (active + archive), e.g. after a paper reset where trade ids start again. */
   function journalClear(acct) {
     J.list = J.list.filter(e => e.acct !== acct);
-    const arc = (store.get('journalArc') || []).filter(e => e.acct !== acct); store.set('journalArc', arc); J.arcN = arc.length;
+    const arc = (store.get('journalArc') || []).filter(e => e.acct !== acct); store.set('journalArc', arc); J.arcN = arc.length; J.arcIds = null; J.bfSig = null;
     const tot = store.get('journalTotals') || {}; Object.keys(tot).forEach(k => { if (k.startsWith(acct + '|')) delete tot[k]; }); store.set('journalTotals', tot);
     if (acct === acctKey() && S.bot.guard) { S.bot.guard.paused = {}; S.bot.guard.since = {}; save(); }
     jSave();
@@ -734,11 +734,33 @@
     });
     if (changed) { jSave(); if (pending.some(e => e.out)) checkGuardrails(); }
   }
+  /* Import closed trades that have no journal entry (e.g. opened before the journal existed, or on another
+     device). Opening context is unknown except what the order comment holds ("TB T+40" → Trend, score +40),
+     and R can't be worked out without the original stop, so they count for trades, win rate and $ only.
+     Runs only when the history list actually changes; at most the 500 most recent closed trades. */
+  function journalBackfill() {
+    const h = S.history || [], sig = acctKey() + '|' + h.length + '|' + (h[0]?.id ?? '') + '|' + (h[0]?.time ?? '');
+    if (J.bfSig === sig) return; J.bfSig = sig;
+    const acct = acctKey();
+    J.arcIds ??= new Set((store.get('journalArc') || []).map(e => e.acct + '|' + e.id));
+    const known = new Set(J.list.map(e => e.acct + '|' + e.id));
+    const add = h.slice(0, 500).filter(d => d.id != null && !known.has(acct + '|' + d.id) && !J.arcIds.has(acct + '|' + d.id));
+    if (!add.length) return;
+    add.reverse().forEach(d => {
+      const c = d.comment || '', m = /^TB ([TBRS])([+-]\d+)?/.exec(c), bot = !!m || /^TBX Bot/.test(c);
+      const t0 = d.openTime || d.time;
+      J.list.push({ id: String(d.id), imp: true, sym: d.symbol, side: d.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL', src: bot ? 'bot' : 'manual', t: t0, acct, lot: d.volume, riskUsd: null,
+        ctx: bot && m ? { strategy: CODE_STRAT[m[1]], score: m[2] != null ? +m[2] : null } : null,
+        out: { t: d.time, profit: +(+d.profit).toFixed(2), r: null, why: closeWhy(d), mins: Math.max(0, Math.round((d.time - t0) / 6e4)) } });
+    });
+    J.list.sort((a, b) => (a.out?.t ?? 9e15) - (b.out?.t ?? 9e15));
+    jSave(); log(`📓 Added ${add.length} earlier closed trade${add.length > 1 ? 's' : ''} to the journal`);
+  }
   /* Stats over closed entries; cached per journal version. */
   function jStats(list) {
     const n = list.length, w = list.filter(e => e.out.profit > 0).length, rs = list.map(e => e.out.r).filter(x => x != null);
     const gain = rs.filter(x => x > 0).reduce((a, b) => a + b, 0), loss = -rs.filter(x => x < 0).reduce((a, b) => a + b, 0);
-    return { n, win: n ? Math.round(w / n * 100) : 0, r: +rs.reduce((a, b) => a + b, 0).toFixed(1), avg: rs.length ? +(rs.reduce((a, b) => a + b, 0) / rs.length).toFixed(2) : 0,
+    return { n, rn: rs.length, win: n ? Math.round(w / n * 100) : 0, r: +rs.reduce((a, b) => a + b, 0).toFixed(1), avg: rs.length ? +(rs.reduce((a, b) => a + b, 0) / rs.length).toFixed(2) : 0,
       pf: loss ? +(gain / loss).toFixed(2) : gain ? Infinity : 0, usd: list.reduce((a, e) => a + e.out.profit, 0) };
   }
   const NEWS_BUCKET = e => e.ctx?.newsNext != null && e.ctx.newsNext < 240 ? 'High-impact news within 4 h' : 'No big news nearby';
@@ -782,10 +804,10 @@
     const by = S.perfBy || 'symbol', rows = jGroups(by), n = rows.reduce((a, [, s]) => a + s.n, 0), G = S.bot.guard || {};
     const status = k => { const key = by === 'symbol' ? 'sym:' + k : by === 'strategy' ? 'strat:' + (Object.entries(Engine.STRATEGIES).find(([, v]) => v.label === k)?.[0] || '') : ''; return G.paused?.[key] ? '<span class="chip mini down">Paused</span>' : ''; };
     return `<div class="seg small" id="perfby">${[['symbol', 'Symbol'], ['strategy', 'Strategy'], ['regime', 'Market type'], ['news', 'News']].map(([k, l]) => `<button data-b="${k}" class="${by === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-      ${n ? `<div class="lvl head perf"><span>${({ symbol: 'Symbol', strategy: 'Strategy', regime: 'Market type', news: 'News' })[by]}</span><span>Trades</span><span>Won</span><span>Net R</span></div>
-      ${rows.map(([k, st]) => `<div class="lvl perf"><span class="title" style="font-size:13px">${esc(k)} ${status(k)}</span><span class="mono">${st.n}${st.n < GUARD.MIN ? `<span class="sub">/${GUARD.MIN}</span>` : ''}</span><span class="mono">${st.win}%</span><b class="mono ${st.r > 0 ? 'up' : st.r < 0 ? 'down' : ''}">${st.r > 0 ? '+' : ''}${st.r}R</b></div>`).join('')}`
+      ${n ? `<div class="lvl head perf"><span>${({ symbol: 'Symbol', strategy: 'Strategy', regime: 'Market type', news: 'News' })[by]}</span><span>Trades</span><span>Won</span><span>Net</span></div>
+      ${rows.map(([k, st]) => `<div class="lvl perf"><span class="title" style="font-size:13px">${esc(k)} ${status(k)}</span><span class="mono">${st.n}${st.n < GUARD.MIN ? `<span class="sub">/${GUARD.MIN}</span>` : ''}</span><span class="mono">${st.win}%</span><span style="text-align:right"><b class="mono ${st.usd > 0 ? 'up' : st.usd < 0 ? 'down' : ''}">${signed(st.usd)}</b><br><span class="sub mono">${st.rn ? (st.r > 0 ? '+' : '') + st.r + 'R' : '—'}${st.rn && st.rn < st.n ? ` <span title="R known for ${st.rn} of ${st.n}">(${st.rn})</span>` : ''}</span></span></div>`).join('')}`
       : '<div class="sub" style="padding:12px 0">Closed trades appear here with why they were opened and how they ended.</div>'}
-      <p class="hint">R = result ÷ amount risked. Fewer than ${GUARD.MIN} trades in a row is too few to judge${acctKey() === 'paper' ? '. <b>Paper prices are random</b>, so these numbers say nothing about the strategy' : ''}.</p>
+      <p class="hint">Net shows $ and R (result ÷ amount risked). Trades from before the journal existed are included for $ and win rate; their R is unknown, so the number in brackets is how many trades the R covers. Fewer than ${GUARD.MIN} trades in a row is too few to judge${acctKey() === 'paper' ? '. <b>Paper prices are random</b>, so these numbers say nothing about the strategy' : ''}.</p>
       <button class="btn ghost small" id="openjournal" style="margin-top:4px">Open trade journal</button>`;
   }
   function openJournal() {
@@ -797,7 +819,7 @@
         ${all.slice(0, shown).map(e => { const c = e.ctx || {}, o = e.out;
           return `<div class="jrow"><div class="row between"><div><span class="side ${e.side === 'BUY' ? 'up' : 'down'}">${e.side}</span> <b>${e.sym}</b> <span class="sub">${fmt(e.lot)} lot · ${e.src === 'bot' ? '🤖' : '✋'} · ${clock(e.t)}</span></div>
             ${o ? `<b class="mono ${cls(o.profit)}">${signed(o.profit)}${o.r != null ? ` <span class="sub">${o.r > 0 ? '+' : ''}${o.r}R</span>` : ''}</b>` : '<span class="chip mini">Open</span>'}</div>
-            <div class="sub" style="margin-top:4px">${e.src === 'bot' ? `${Engine.STRATEGIES[c.strategy]?.icon || ''} ${Engine.STRATEGIES[c.strategy]?.label || c.strategy || ''} · ${Engine.REGIME_LABEL[c.regime] || c.regime || '—'} · score ${c.score > 0 ? '+' : ''}${c.score} · ${c.conf}% conf${c.htf === true ? ' · with the bigger trend' : c.htf === false ? ' · against the bigger trend' : ''}${c.news != null ? ` · news ${c.news > 0 ? '+' : ''}${Math.round(c.news * 100)}` : ''}${c.newsNext != null && c.newsNext < 240 ? ` · big news in ${c.newsNext < 60 ? c.newsNext + 'm' : Math.round(c.newsNext / 60) + 'h'}` : ''}` : 'Manual order'}</div>
+            <div class="sub" style="margin-top:4px">${e.imp ? `Added from history${e.src === 'bot' && c.strategy ? ` · ${Engine.STRATEGIES[c.strategy]?.label || c.strategy}${c.score != null ? ` · score ${c.score > 0 ? '+' : ''}${c.score}` : ''}` : e.src === 'bot' ? ' · bot trade' : ' · manual'} (opening details weren't recorded)` : e.src === 'bot' ? `${Engine.STRATEGIES[c.strategy]?.icon || ''} ${Engine.STRATEGIES[c.strategy]?.label || c.strategy || ''} · ${Engine.REGIME_LABEL[c.regime] || c.regime || '—'} · score ${c.score > 0 ? '+' : ''}${c.score} · ${c.conf}% conf${c.htf === true ? ' · with the bigger trend' : c.htf === false ? ' · against the bigger trend' : ''}${c.news != null ? ` · news ${c.news > 0 ? '+' : ''}${Math.round(c.news * 100)}` : ''}${c.newsNext != null && c.newsNext < 240 ? ` · big news in ${c.newsNext < 60 ? c.newsNext + 'm' : Math.round(c.newsNext / 60) + 'h'}` : ''}` : 'Manual order'}</div>
             ${o ? `<div class="sub">${o.why} after ${o.mins < 60 ? o.mins + 'm' : o.mins < 1440 ? Math.round(o.mins / 60) + 'h' : Math.round(o.mins / 1440) + 'd'}</div>` : ''}</div>`; }).join('') || '<div class="empty">No trades yet.</div>'}
         ${all.length > shown ? '<button class="btn ghost small" id="jmore" style="margin-top:10px">Show more</button>' : ''}`;
       const m = $('#jmore', bg); if (m) m.onclick = () => { shown += 50; draw(); };
@@ -1607,7 +1629,7 @@
       if (!S.dayStart || S.dayStart.day !== today) { S.dayStart = { day: today, equity: S.account.equity }; store.set('dayStart', S.dayStart); }
       if (isLive()) S.status = 'Connected';
       checkBasket();
-      journalReconcile();
+      journalReconcile(); journalBackfill();
     } catch (e) { S.status = 'Error'; }
     S._polling = false; refreshLive(); ringBusy(false); ringCycle();
   }

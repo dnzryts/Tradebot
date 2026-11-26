@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.1] - 2026-11-27
+### Fixed
+- **Closed trades missing from Bot performance and the trade journal.** Trades opened before 1.15.0 was installed had no journal entry, so when they closed (for example by take-profit) their result had nothing to attach to and wasn't counted.
+  - The app now adds any closed trade from your history that the journal doesn't have yet. It works out bot or manual and the strategy and score from the order comment ("TB T-55" means Trend, score −55). These show as "Added from history".
+  - Their opening stop-loss wasn't recorded, so their result in R is unknown. They count toward trades, win rate and $, but not R.
+  - The import runs only when your trade history changes, covers at most the 500 most recent closed trades, and never adds a trade twice, including ones already archived.
+- Bot performance's **Net** column shows the $ result as well as R. A number in brackets shows how many trades the R covers when some trades have no R.
+
 ## [1.15.0] - 2026-11-27
 ### Added
 - **Trade journal.** Every trade, bot or manual, records **why it was opened**: strategy, market type, sentiment score, confidence, bigger-trend check, news tone and time to the next big news. When it closes, the journal adds **how it ended**: P/L, result in R (P/L ÷ amount risked), exit reason and how long it lasted.
