@@ -149,6 +149,7 @@
 
   /* ---------------- Icons ---------------- */
   const P = {
+    exit: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     eyeoff: '<path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/>',
     home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
@@ -397,13 +398,23 @@
       return true;
     };
   })();
-  let lastBack = 0;
   function handleBack() {
     const dlg = $$('.dlg-bg').at(-1); if (dlg && dlg._cancel) { dlg._cancel(); return; }
     const sheets = $$('.sheet-bg:not(.closing)'); if (sheets.length) { closeSheet(sheets.at(-1)); return; }
     if (S.unlocked && $('#view') && S.tab !== 'home') { if (!S.slideTo?.('home')) goTab('home', true, -1); return; }
-    if (Date.now() - lastBack < 2000) { const A = window.Capacitor?.Plugins?.App; return A ? A.exitApp() : undefined; }
-    lastBack = Date.now(); toast('Press back again to exit');
+    confirmExit();
+  }
+  /* Back on Home (or the welcome / lock screen): ask before leaving, and say what happens to the bot. */
+  async function confirmExit() {
+    if (S._exitAsk) return; S._exitAsk = true;
+    const bots = S.unlocked ? S.positions.filter(isBot).length : 0, live = S.unlocked && isLive(), on = S.unlocked && S.bot.enabled;
+    const msg = !on ? 'You can come back any time. Your settings and trades are kept.'
+      : live ? `The Sentiment Bot <b>stops while Tradebot is closed</b>: no new trades, no trailing stop or sentiment exits.${bots ? ` Your ${bots} open bot trade${bots > 1 ? 's keep their' : ' keeps its'} stop-loss and take-profit at your broker.` : ''}`
+      : 'The Sentiment Bot and the paper market <b>pause while Tradebot is closed</b>, and carry on from where they left off when you come back.';
+    const ok = await ask({ title: 'Exit Tradebot?', message: msg, ok: 'Exit', cancel: 'Stay', tone: on && live ? 'danger' : 'primary', ic: 'exit' });
+    S._exitAsk = false;
+    if (!ok) return;
+    const A = window.Capacitor?.Plugins?.App; if (A) A.exitApp();
   }
   (function setupBack() {
     const A = window.Capacitor?.isNativePlatform?.() && window.Capacitor?.Plugins?.App;

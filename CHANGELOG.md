@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.13.1] - 2026-11-26
+### Changed
+- **Exit confirmation.** Pressing Back on Home, or on the welcome or lock screen, now opens an "Exit Tradebot?" dialog with **Stay** and **Exit**. It replaces "press back again to exit". Pressing Back again, or tapping outside, keeps you in the app.
+  - When the Sentiment Bot is on, the dialog explains what happens while the app is closed. On a live MT5 account the bot stops: no new trades, trailing stop or sentiment exits. Open bot trades keep their stop-loss and take-profit at the broker. On Paper, the bot and simulated market pause and carry on when you return. The Exit button turns red for a live account with the bot running.
+
 ## [1.13.0] - 2026-11-26
 ### Added
 - **Landscape and auto-rotation.** The app now turns with your phone and follows Android's auto-rotate setting: with rotation lock on, it stays upright. Before, it was locked to portrait.
