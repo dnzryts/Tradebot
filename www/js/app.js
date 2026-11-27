@@ -28,7 +28,7 @@
   const TESTED_KEYS = ['timeframe', 'threshold', 'minConfidence', 'slAtr', 'tpAtr', 'htfFilter', 'exitOnFlip', 'trailing'];
   const HTF = { '5m': '1h', '15m': '1h', '1h': '4h', '4h': '1d' };
   const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
-  const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1, TRAIL_R = 1;
+  const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1, TRAIL_R = 1, BE_R = 0.5;
   const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, newsPause: true, ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
@@ -908,8 +908,13 @@
     const locked = slUsd != null && slUsd >= 0;
     const prog = p.takeProfit ? clamp01((cur - p.openPrice) / (p.takeProfit - p.openPrice)) : null;
     let trail = '';
-    if (bot && S.bot.trailing && riskUsd) trail = locked ? `🔒 Protect profits is active: the stop now locks in <b class="up">${signed(slUsd)}</b> and rises with the price.`
-      : `🔒 Protect profits starts at <b>${signed(riskUsd * TRAIL_R)}</b>: from there the stop follows the price to lock in profit.`;
+    if (bot && S.bot.trailing && riskUsd) {
+      const st = locked ? (slUsd > riskUsd * .05 ? 2 : 1) : 0, beAt = riskUsd * BE_R, trAt = riskUsd * TRAIL_R;
+      trail = `<div class="protect"><div class="title">🔒 Protect profits${st ? ' · <span class="up">active</span>' : ''}</div>
+        <div class="pstep ${st >= 1 ? 'done' : p.profit >= beAt ? 'now' : ''}"><b>1</b><span>At <b>${signed(beAt)}</b> (half the risk): stop moves to <b>break-even</b>, so the trade can no longer lose.</span></div>
+        <div class="pstep ${st >= 2 ? 'done' : ''}"><b>2</b><span>At <b>${signed(trAt)}</b> (1× the risk): stop <b>follows the price ${signed(trAt).replace('+', '')} behind</b>, locking in more as it rises. It never moves back.</span></div>
+        <div class="sub">${st === 2 ? `Now locking in <b class="up">${signed(slUsd)}</b>.` : st === 1 ? 'Stop is at break-even now.' : `Now ${signed(p.profit)}: ${p.profit >= beAt ? 'moving the stop on the next refresh.' : `stage 1 starts in ${signed(beAt - p.profit).replace('+', '')} more profit.`}`} The take-profit stays at ${p.takeProfit ? px(sym, p.takeProfit) : '—'}.</div></div>`;
+    }
     const row = (lbl, cls2, price, usd, note) => `<div class="lvl"><span class="lvlname ${cls2}">${lbl}</span><span class="mono">${price != null ? px(sym, price) : '—'}</span><span class="sub mono">${note || ''}</span><b class="mono ${usd == null ? '' : cls(usd)}">${usd == null ? '—' : signed(usd)}</b></div>`;
     paint(body, `<div class="row between"><div class="row" style="gap:8px"><span class="side ${buy ? 'up' : 'down'}">${buy ? 'BUY' : 'SELL'}</span><h2 style="margin:0">${sym}</h2></div><span class="sub">${bot ? st.icon + ' ' + st.label : '✋ Manual'} · ⏱ ${age(p.time)}</span></div>
       <div class="row between" style="margin-top:6px"><div class="tpl mono ${cls(p.profit)}" style="margin:0">${signed(p.profit)}</div><span class="sub mono">${fmt(p.volume)} lot</span></div>
@@ -926,7 +931,7 @@
         <div class="stat"><div class="lbl">Reward : risk</div><div class="val">${tpUsd != null && riskUsd ? fmt(tpUsd / riskUsd, 1) + ' : 1' : '—'}</div></div>
         <div class="stat"><div class="lbl">Now in R</div><div class="val mono ${cls(p.profit)}">${riskUsd ? (p.profit >= 0 ? '+' : '') + fmt(p.profit / riskUsd, 2) + 'R' : '—'}</div></div></div>
       ${(() => { const j = J.list.find(e => e.id === String(p.id)), c = j?.ctx; return j && j.src === 'bot' && c ? `<p class="hint" style="margin-top:10px">📓 <b>Why the bot took it:</b> ${Engine.STRATEGIES[c.strategy]?.label || c.strategy} strategy in a ${(Engine.REGIME_LABEL[c.regime] || c.regime || '').toLowerCase()} market · score ${c.score > 0 ? '+' : ''}${c.score} · ${c.conf}% confidence${c.htf === true ? ' · with the bigger trend' : ''}${c.newsNext != null && c.newsNext < 240 ? ` · big news was ${c.newsNext}m away` : ''}.</p>` : ''; })()}
-      ${trail ? `<p class="hint" style="margin-top:10px">${trail}</p>` : ''}
+      ${trail}
       ${(() => { const e = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now() - 15 * 6e4, impacts: ['High'] }).find(x => x.time < Date.now() + 2 * 36e5); return e ? `<div class="notice" style="margin-top:10px">⚠ <b>${e.ccy} ${esc(e.title)}</b> ${relTime(e.time)} (${clock(e.time)}). High-impact news can make the price jump past a stop-loss or take-profit.</div>` : ''; })()}
       <p class="hint">P/L at each level is projected from the current price and lot size. Spread, commission and swap are not included${p.swap ? ` (swap so far ${signed(p.swap)})` : ''}.</p>
       <div class="grid2" style="margin-top:6px"><button class="btn ghost" id="tsym">Analysis & new order</button><button class="btn danger" data-close="${p.id}">Close trade</button></div>`, 'trade:' + p.id);
@@ -1016,7 +1021,7 @@
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Follow the bigger trend</div><div class="sub" id="htfsub">Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down</div></div><label class="toggle"><input type="checkbox" id="htf" ${b.htfFilter ? 'checked' : ''}><span></span></label></div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Guardrails: pause what keeps losing</div><div class="sub">If a symbol or strategy loses ${Math.abs(GUARD.NET_R)}R or more over its last ${GUARD.MIN} bot trades (profit factor under ${GUARD.PF}), stop opening trades on it and tell you. Never raises risk.</div></div><label class="toggle"><input type="checkbox" id="guardon" ${S.bot.guard?.on !== false ? 'checked' : ''}><span></span></label></div>
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Pause around high-impact news</div><div class="sub">No new trades from 30 min before until 30 min after big news for the symbol's currencies (rate decisions, CPI, jobs reports)</div></div><label class="toggle"><input type="checkbox" id="npause" ${b.newsPause ? 'checked' : ''}><span></span></label></div>
-        <div class="row between" style="margin-bottom:14px"><div><div class="title">Protect profits</div><div class="sub">Trailing stop: once a trade is up by the amount it risks, its stop-loss follows the price at that distance, locking in profit</div></div><label class="toggle"><input type="checkbox" id="trail" ${b.trailing ? 'checked' : ''}><span></span></label></div>
+        <div class="row between" style="margin-bottom:14px"><div><div class="title">Protect profits</div><div class="sub">At half the risk in profit the stop moves to break-even (can no longer lose); at 1× the risk it trails the price by that amount, locking in profit</div></div><label class="toggle"><input type="checkbox" id="trail" ${b.trailing ? 'checked' : ''}><span></span></label></div>
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
       </div></div>
       <div class="${atLeast('moderate') ? '' : 'hidden'}">
@@ -1194,7 +1199,8 @@
     let r = d.reason || '';
     const c = d.comment || '';
     if (!r) r = /\[sl/i.test(c) ? 'SL' : /\[tp/i.test(c) ? 'TP' : /\[so/i.test(c) ? 'Stop out' : /^TBX /.test(c) ? c.slice(4) : c ? 'Closed in MT5' : '';
-    if (r === 'SL' && d.profit > 0) return '🔒 Trailing stop (profit locked)';
+    if (r === 'SL' && d.profit > 0) return '🔒 Protected stop (profit locked)';
+    if (r === 'SL' && d.profit > -1) return '🔒 Break-even stop';
     if (r === 'SL') return '🛑 Stop-loss hit';
     if (r === 'TP') return '🎯 Take-profit hit';
     if (/^Bot|^Basket/.test(r)) return '🤖 ' + r;
@@ -1630,6 +1636,7 @@
       if (isLive()) S.status = 'Connected';
       checkBasket();
       journalReconcile(); journalBackfill();
+      if (S.bot.enabled && !S._protecting) { S._protecting = true; protectProfits().finally(() => S._protecting = false); }
     } catch (e) { S.status = 'Error'; }
     S._polling = false; refreshLive(); ringBusy(false); ringCycle();
   }
@@ -1763,7 +1770,6 @@
         else if (S.bot.exitOnFlip && bars[p.id] >= FLIP_MIN_BARS && (buy ? a.score <= -lim : a.score >= lim)) why = `Sentiment flipped (${a.score})`;
         if (why) { try { await S.broker.closePosition(p.id, st === 'reversion' ? 'Bot: back to mean' : 'Bot: sentiment flip'); log(`${why} on ${p.symbol}: closed ${signed(p.profit)}`, cls(p.profit)); } catch (e) { log(`Close ${p.symbol} failed: ${e.message}`, 'down'); } }
       }
-      await protectProfits();
       // Entries
       await poll();
       let open = S.positions.filter(p => isBot(p)).length;
@@ -1805,14 +1811,21 @@
     for (const p of mine) {
       const r = meta[p.id]?.r, price = p.currentPrice; if (!r || !price) continue;
       const dir = p.type === 'POSITION_TYPE_BUY' ? 1 : -1, gain = (price - p.openPrice) * dir;
-      if (gain < r * TRAIL_R) continue;
+      if (gain < r * BE_R) continue;
       const d = S.specs?.[p.symbol]?.digits ?? S.digitsOf?.[p.symbol] ?? digits(p.symbol);
-      const sl = +(price - dir * r * TRAIL_R).toFixed(d);
-      if (p.stopLoss && (sl - p.stopLoss) * dir < r * .1) continue;   // only move in steps of ≥ 0.1 R
+      // Stage 1 (from +0.5 R): stop to break-even (entry plus the spread, so a reversal closes at about $0).
+      // Stage 2 (from +1 R): stop trails 1 R behind the price. Whichever is higher wins; the stop never moves back.
+      let sp = 0; if (meta[p.id].sp == null) { try { const q = await S.broker.getPrice(p.symbol); meta[p.id].sp = Math.max(0, q.ask - q.bid); store.set('posMeta', meta); } catch { meta[p.id].sp = 0; } }
+      sp = meta[p.id].sp;
+      const be = p.openPrice + dir * sp, trail = gain >= r * TRAIL_R ? price - dir * r * TRAIL_R : null;
+      const target = trail != null && (trail - be) * dir > 0 ? trail : be, stage = target === be ? 1 : 2;
+      const sl = +target.toFixed(d);
+      if (p.stopLoss && (sl - p.stopLoss) * dir < r * .1) continue;   // only move forward, in steps of ≥ 0.1 R
       try {
         await S.broker.modifyPosition(p.id, { stopLoss: sl, takeProfit: p.takeProfit });
         const locked = p.profit * ((sl - p.openPrice) * dir) / gain;
-        log(`🔒 ${p.symbol}: stop moved to ${px(p.symbol, sl)} (locks ${signed(locked)})`, locked >= 0 ? 'up' : '');
+        meta[p.id].stage = stage; store.set('posMeta', meta);
+        log(stage === 1 ? `🔒 ${p.symbol}: up ${fmt(gain / r, 2)}R, stop moved to break-even ${px(p.symbol, sl)}: this trade can no longer lose` : `🔒 ${p.symbol}: stop trailing at ${px(p.symbol, sl)} (locks ${signed(locked)})`, 'up');
       } catch (e) {
         if (/404|not found/i.test(e.message) && S.conn.mode === 'bridge') { S._noModify = true; log('Protect profits needs bridge 1.3.0: re-run install.ps1 on your VPS', 'down'); return; }
         log(`Couldn't move ${p.symbol} stop: ${e.message}`, 'down');

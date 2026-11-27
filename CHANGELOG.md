@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.16.0] - 2026-11-28
+### Changed
+- **Protect profits now starts earlier, in two stages.** Before, nothing happened until a trade was up by its full risk (1R). A trade up +$19.60 on $28.49 of risk still had its original stop.
+  - **Stage 1 at +0.5R** (half the risk, e.g. +$14.25): the stop-loss moves to **break-even**: entry plus the spread, so a reversal closes at about $0. From then on the trade can no longer lose.
+  - **Stage 2 at +1R**: the stop **trails 1R behind the price**, locking in more profit as it rises. It never moves back. The take-profit is unchanged.
+  - Tested on 16 months of real prices with the Balanced preset: **+52R / +18R** (Jun 2025–May 2026 / Jan–May 2025), against +47R / +12.5R before. The win rate went from 50% to 63%, and the deepest drawdown was smaller.
+  - Locking in from the first bit of profit, as soon as a trade is +0.25R, did much worse: +17R / +2R. Normal price wiggles closed most trades at tiny gains before they could reach their target.
+- **Protection is checked on every refresh** (every second on Paper and Own VPS) while the bot is running, not just on each bot scan. The broker is only asked to move a stop when it actually changes, by at least 0.1R.
+- **The trade chart explains it.** A Protect profits card shows both stages with their $ trigger points, which stage is done, and how much is locked in or how far it is to stage 1.
+- The activity log says what happened, e.g. "🔒 GBPUSD: up 0.67R, stop moved to break-even" and "stop trailing at 1.26479 (locks +$19.24)". Closed trades show "🔒 Break-even stop" or "🔒 Protected stop (profit locked)".
+
 ## [1.15.1] - 2026-11-27
 ### Fixed
 - **Closed trades missing from Bot performance and the trade journal.** Trades opened before 1.15.0 was installed had no journal entry, so when they closed (for example by take-profit) their result had nothing to attach to and wasn't counted.

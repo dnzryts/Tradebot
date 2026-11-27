@@ -522,3 +522,12 @@ html.bars-hidden body::before { display: none; }
 .jrow .side { font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 800; }
 .jrow .side.up { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
 .jrow .side.down { background: color-mix(in srgb, var(--down) 18%, transparent); color: var(--down); }
+
+/* Protect profits explainer on the trade chart */
+.protect { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: var(--card2); }
+.protect .pstep { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.protect .pstep > b { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; background: var(--card); color: var(--text); }
+.protect .pstep.done b:first-child { background: var(--up); color: #fff; }
+.protect .pstep.now b:first-child { background: var(--warn); color: #fff; }
+.protect .pstep.done, .protect .pstep.now { color: var(--text); }
+.protect .sub { margin-top: 8px; }
