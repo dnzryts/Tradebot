@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.17.2] - 2026-11-28
+### Changed
+- **Keep % of profit now follows from entry by default.** From the first profit, the stop keeps 90% (or 70% / 80%) of the current profit and moves up with it, never back. There's no fixed break-even stage first. For example, at +$5 it locks +$4.50, and at +$41 about +$36.90.
+  - Stops move whenever the locked amount rises by at least 0.01R, at most once every 2 s per trade.
+  - The earlier behaviour (break-even at +0.5R, then keep the % from +1R) is still there: **Keep % of profit → After break-even, from +1R**.
+  - In the backtest, keeping 90% from entry lost about −100R, where Standard made +52R. Standard stays the app's default, and the settings card says so.
+  - Each trade records its start mode, so **Portfolio → Bot performance → Protect** shows "Keep 90% from entry" separately.
+- The trade chart card for this mode shows one simple rule and what it's locking now, e.g. "Now +$6.48 → keeps +$5.83".
+
 ## [1.17.1] - 2026-11-28
 ### Added
 - **"Keep % of profit" Protect profits mode** (optional). Auto-Trade → Strategy settings → Protect profits, at Moderate and Pro levels.
