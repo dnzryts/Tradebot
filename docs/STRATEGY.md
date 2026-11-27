@@ -117,6 +117,7 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 - **Exit on sentiment flip** (optional): after the trade has lasted at least **4 closed candles**, a bot BUY closes when the closed-candle score falls to **−1.5 × threshold** or lower, and the reverse for a SELL. (Before v1.8 this fired at 0.6 × threshold on the forming candle, which closed most trades on noise.)
 - **Reversion** trades close when price returns to the middle Bollinger band
 - **Protect profits** (on in all presets), in two stages. R is the trade's original stop distance. **Stage 1:** at +0.5 R the stop-loss moves to break-even (entry plus the spread), so the trade can no longer lose. **Stage 2:** at +1 R the stop trails 1 R behind the price. The stop only moves forward, in steps of at least 0.1 R. It's checked on every refresh while the bot runs. On Own VPS it needs bridge 1.3.0.
+- **Tight protect profits** (optional, Moderate and Pro levels): the stop stays 0.1R, 0.25R or 0.5R behind the price as soon as that is above break-even, moving at most once every 2 s. It is **not** a tested setting: 0.1R lost −19R / −18R in the backtest, against +52R / +18R for Standard. Each trade records which mode it used, and Portfolio → Bot performance → Protect compares them.
 - Manual close at any time from Home or Portfolio
 
 ## 5. Kill-switches

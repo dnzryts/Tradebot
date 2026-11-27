@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.17.0] - 2026-11-28
+### Added
+- **Tight Protect profits mode** (optional). Auto-Trade → Strategy settings → Protect profits → **Tight**, at Moderate and Pro levels.
+  - The stop stays **0.1R, 0.25R or 0.5R behind the price** as soon as that point is above break-even, and moves up with it, never back. With 0.1R, a trade risking $28.49 keeps its stop about $2.85 behind the price: at +$41 profit the stop locks in about +$38.
+  - **Not recommended, and marked as untested.** Over 16 months of real prices, 0.1R behind won 86% of trades but lost −19R and −18R in the two test periods. The Standard mode made +52R and +18R. Normal price wiggles close trades at tiny gains while losing trades stay full size.
+  - Choosing Tight asks for confirmation first. The tested-settings card then shows "Custom settings · not tested".
+  - The trade chart explains how Tight works and how much it's locking in. The activity log notes stop moves, at most once a minute per trade.
+  - To avoid flooding the broker, Tight moves a stop at most once every 2 s per trade. If the broker refuses a stop that close to the price, the bot waits 10 s and tries again, and logs the reason once.
+- **Compare the two:** every trade now records which Protect profits mode it used. **Portfolio → Bot performance → Protect** shows trades, win rate and net result for Standard vs Tight. Best done on a demo account.
+
 ## [1.16.0] - 2026-11-28
 ### Changed
 - **Protect profits now starts earlier, in two stages.** Before, nothing happened until a trade was up by its full risk (1R). A trade up +$19.60 on $28.49 of risk still had its original stop.
