@@ -956,6 +956,7 @@
         <div class="stat"><div class="lbl">To target</div><div class="val">${prog == null ? '—' : Math.round(prog * 100) + '%'}</div></div>
         <div class="stat"><div class="lbl">Reward : risk</div><div class="val">${tpUsd != null && riskUsd ? fmt(tpUsd / riskUsd, 1) + ' : 1' : '—'}</div></div>
         <div class="stat"><div class="lbl">Now in R</div><div class="val mono ${cls(p.profit)}">${riskUsd ? (p.profit >= 0 ? '+' : '') + fmt(p.profit / riskUsd, 2) + 'R' : '—'}</div></div></div>
+      ${(() => { const cp = J.list.find(e => e.id === String(p.id))?.ctx?.cap; return cp ? `<p class="hint" style="margin-top:10px">📏 <b>Lot capped by Max lot:</b> your ${S.bot.riskPct}% risk setting wanted <b>${cp.want} lot</b> (risking ${money(cp.risk)}); Max lot ${fmt(p.volume)} means this trade risks about <b>${money(cp.riskAt)}</b>. Change it in Auto-Trade → Money management.</p>` : ''; })()}
       ${(() => { const j = J.list.find(e => e.id === String(p.id)), c = j?.ctx; return j && j.src === 'bot' && c ? `<p class="hint" style="margin-top:10px">📓 <b>Why the bot took it:</b> ${Engine.STRATEGIES[c.strategy]?.label || c.strategy} strategy in a ${(Engine.REGIME_LABEL[c.regime] || c.regime || '').toLowerCase()} market · score ${c.score > 0 ? '+' : ''}${c.score} · ${c.conf}% confidence${c.htf === true ? ' · with the bigger trend' : ''}${c.newsNext != null && c.newsNext < 240 ? ` · big news was ${c.newsNext}m away` : ''}.</p>` : ''; })()}
       ${trail}
       ${(() => { const e = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now() - 15 * 6e4, impacts: ['High'] }).find(x => x.time < Date.now() + 2 * 36e5); return e ? `<div class="notice" style="margin-top:10px">⚠ <b>${e.ccy} ${esc(e.title)}</b> ${relTime(e.time)} (${clock(e.time)}). High-impact news can make the price jump past a stop-loss or take-profit.</div>` : ''; })()}
@@ -1077,6 +1078,7 @@
         ${slider('maxPositions', 'Max open positions', 1, 10, 1)}
         ${slider('dailyLossPct', 'Daily loss limit (bot pauses)', .5, 20, .5, '-', '%')}
         ${slider('maxLot', 'Max lot per trade', .01, 10, .01)}
+        <div id="capwarn">${capWarnHtml()}</div>
         <div class="${atLeast('pro') ? '' : 'hidden'}">${slider('intervalSec', 'Scan interval', 5, 300, 5, '', ' s')}
         <p class="hint" style="margin-top:-4px">How often the bot checks for a newly closed candle. It trades at most once per candle, so a shorter interval does not mean more trades.</p></div>
       </div></div>
@@ -1103,7 +1105,8 @@
     $('#trail').onchange = e => { b.trailing = e.target.checked; $('#pmodebox').classList.toggle('hidden', !b.trailing); save(); log(b.trailing ? 'Protect profits on (trailing stop)' : 'Protect profits off'); };
     $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
     bindTested(v);
-    $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); });
+    loadSpecs().then(() => { const w = $('#capwarn'); if (w) w.innerHTML = capWarnHtml(); });
+    $$('input[data-k]').forEach(inp => inp.oninput = () => { b[inp.dataset.k] = +inp.value; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $(`#v_${inp.dataset.k}`).textContent = inp.dataset.pre + inp.value + inp.dataset.suf; save(); if (['maxLot', 'riskPct'].includes(inp.dataset.k)) { const w = $('#capwarn'); if (w) w.innerHTML = capWarnHtml(); } });
     $('#flip').onchange = e => { b.exitOnFlip = e.target.checked; save(); };
     $('#lockbtn').onclick = async () => {
       const open = !S.settingsUnlocked;
@@ -1166,6 +1169,13 @@
   function refreshTested() { const t = S.tab === 'bot' && document.getElementById('tested'); if (t) { paint(t, testedHtml(), 'tested'); bindTested($('#view')); } }
   const presetHint = () => level() === 'beginner' ? 'Conservative trades on 1-hour charts with half the risk. Balanced trades on 15-minute charts. Both were tested on 16 months of real prices.'
     : 'All three presets were tested on 16 months of real prices. Tapping one resets strategy to Auto and targets to ATR.';
+  function capWarnHtml() {
+    const r = capReport(); if (!r.length) return '';
+    const lo = Math.min(...r.map(x => x.riskAtLot)), hi = Math.max(...r.map(x => x.riskAtLot));
+    return `<div class="notice" style="margin-top:6px">📏 <b>Max lot ${S.bot.maxLot} is below what your ${S.bot.riskPct}% risk needs</b> on ${r.map(x => `${x.sym} (${x.want} lot)`).join(', ')}.
+      These trades will open at ${S.bot.maxLot} lot and risk about ${money(lo)}${hi - lo > 1 ? `–${money(hi)}` : ''} instead of ${money(r[0].risk)}.
+      <div class="sub" style="margin-top:6px">Keep the cap as a safety limit (and consider lowering Risk per trade to match), or raise Max lot so every trade risks the same amount.</div></div>`;
+  }
   const slider = (k, l, min, max, step, pre = '', suf = '') => `<div class="field"><div class="row between"><label style="margin:0 0 4px 4px">${l}</label><b class="mono" id="v_${k}">${pre}${S.bot[k]}${suf}</b></div>
     <input type="range" data-k="${k}" data-pre="${pre}" data-suf="${suf}" min="${min}" max="${max}" step="${step}" value="${S.bot[k]}"></div>`;
   const tfHint = () => ({
@@ -1257,7 +1267,7 @@
   function positionsHtml(list) {
     if (!list.length) return '<div class="empty">No open positions</div>';
     return list.map(p => `<div class="list-item tappable" data-key="p${p.id}" data-trade="${p.id}"><div class="avatar ${p.type === 'POSITION_TYPE_BUY' ? 'up' : 'down'}">${p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL'}</div>
-      <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${isBot(p) ? ' · 🤖' : ''}</span> <span class="chev">›</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
+      <div class="grow"><div class="title">${p.symbol} <span class="sub">${fmt(p.volume)} lot${J.list.find(e => e.id === String(p.id))?.ctx?.cap ? ' <span class="chip mini warnc" title="Limited by Max lot">capped</span>' : ''}${isBot(p) ? ' · 🤖' : ''}</span> <span class="chev">›</span></div><div class="sub mono">${px(p.symbol, p.openPrice)} → ${px(p.symbol, p.currentPrice)}</div></div>
       <div class="right"><div class="mono title ${cls(p.profit)}">${signed(p.profit)}</div><button class="sub" data-close="${p.id}" style="color:var(--accent);font-weight:700">Close</button></div></div>`).join('');
   }
   const posHeader = t => `<div class="section-head"><h3>${t}</h3>${S.positions.length ? `<button class="closeall-pill" data-closeall>${icon('x')}Close all</button>` : ''}</div>`;
@@ -1811,13 +1821,24 @@
     return [a, d];
   }
 
-  function lotFor(sym, a, spec, slMult = S.bot.slAtr, riskMult = 1) {
+  /* Risk-based size: lot = (equity × risk % × mood) ÷ (stop distance × $ per price point per lot).
+     Returns the lot used plus what the risk setting wanted, so a Max lot cap can be shown. */
+  function lotCalc(sym, a, spec, slMult = S.bot.slAtr, riskMult = 1) {
     const eq = S.account.equity, risk = eq * S.bot.riskPct / 100 * riskMult, slDist = a.atr * slMult;
     const perLot = slDist * valuePerUnit(sym, spec, a.price);
-    let vol = risk / (perLot || 1e9);
-    const step = spec.volumeStep || .01; vol = Math.floor(vol / step) * step;
-    return +Math.min(Math.max(vol, spec.minVolume || .01), spec.maxVolume || 100, S.bot.maxLot).toFixed(2);
+    const step = spec.volumeStep || .01, minV = spec.minVolume || .01, maxV = spec.maxVolume || 100;
+    const want = +Math.min(Math.max(Math.floor(risk / (perLot || 1e9) / step) * step, minV), maxV).toFixed(2);
+    const lot = +Math.min(want, S.bot.maxLot).toFixed(2);
+    return { lot, want, capped: lot < want, risk, riskAtLot: lot * perLot, perLot };
   }
+  function lotFor(sym, a, spec, slMult, riskMult) { return lotCalc(sym, a, spec, slMult, riskMult).lot; }
+  /* Watched symbols whose risk-based lot is above Max lot right now (for the Auto-Trade warning). */
+  function capReport() {
+    if (S.bot.targetMode === 'usd') return [];
+    return watch().map(sym => { const a = S.botAnalysis?.[sym] || S.analysis[sym], spec = S.specs?.[sym]; if (!a || !spec) return null;
+      try { const c = lotCalc(sym, a, spec); return c.capped ? { sym, ...c } : null; } catch { return null; } }).filter(Boolean);
+  }
+  async function loadSpecs() { S.specs ||= {}; for (const sym of watch()) if (!S.specs[sym]) { try { S.specs[sym] = await queued(() => S.broker.getSpec(sym)); } catch { } } }
   /* Fixed-$ mode: choose a lot so the take-profit sits ~tpAtr × ATR away, then derive exact price
      distances from that (rounded) lot so profit at TP = tpUsd and loss at SL = slUsd. */
   function usdPlan(sym, a, spec, tpAtr = S.bot.tpAtr, lotOverride) {
@@ -1889,12 +1910,13 @@
         if (S.positions.some(p => p.symbol === s)) continue;
         const spec = await S.broker.getSpec(s);
         const plan = S.bot.targetMode === 'usd' ? usdPlan(s, a, spec, d.tpAtr) : null;
-        const vol = plan ? plan.lot : lotFor(s, a, spec, d.slAtr, d.riskMult);
+        const lc = plan ? null : lotCalc(s, a, spec, d.slAtr, d.riskMult), vol = plan ? plan.lot : lc.lot;
+        (S.specs ||= {})[s] = spec;
         // Spread guard: skip when the spread is more than 10% of the stop distance (a cost the trade rarely earns back)
         try { const q = await S.broker.getPrice(s), sp = q.ask - q.bid, slD = plan ? plan.slDist : a.atr * d.slAtr;
           if (sp > slD * SPREAD_MAX) { if ((S._spreadLog ||= {})[s] !== S.barKey[s]) { S._spreadLog[s] = S.barKey[s]; log(`Skipped ${s}: spread is ${Math.round(sp / slD * 100)}% of the stop distance`, ''); } continue; } } catch { }
         const st = Engine.STRATEGIES[d.strategy];
-        try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':', src: 'bot', ctx: journalCtx(s, a, d) }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); }
+        try { await placeOrder(s, d.action, vol, `TB ${STRAT_CODE[d.strategy]}${a.score > 0 ? '+' : ''}${a.score}`, { slAtr: d.slAtr, tpAtr: d.tpAtr, tag: st.icon + ' ' + st.label + ':', src: 'bot', ctx: { ...journalCtx(s, a, d), ...(lc?.capped ? { cap: { want: lc.want, risk: +lc.risk.toFixed(2), riskAt: +lc.riskAtLot.toFixed(2) } } : {}) } }); open++; notify(`Tradebot ${d.action} ${s}`, `${st.label} · ${vol} lot · ${d.why}`); if (lc?.capped) log(`📏 ${s}: lot capped at ${vol} by Max lot (risk setting wanted ${lc.want} lot): risking ${money(lc.riskAtLot)} instead of ${money(lc.risk)}`); }
         catch (e) { log(`Order ${s} failed: ${e.message}`, 'down'); }
       }
       await poll();

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.20.0] - 2026-11-28
+### Added
+- **See when Max lot limits a trade's size.** The bot sizes each trade from Risk per trade: lot = (equity × risk % × market-mood adjustment) ÷ (stop distance × $ per point per lot). Max lot then caps that. Until now the cap applied silently.
+  - **Auto-Trade → Money management** shows a warning when Max lot is below what your risk setting needs on the watched symbols. For example: "Max lot 0.13 is below what your 1% risk needs on EURUSD (0.36 lot), GBPUSD (0.28 lot)… risk about $35.87–$44.99 instead of $100.00." It updates as you move the Risk per trade or Max lot slider.
+  - **Open positions:** trades limited by Max lot show a **capped** tag.
+  - **Trade chart:** "Lot capped by Max lot: your 1% risk setting wanted 0.46 lot (risking $100.00); Max lot 0.13 means this trade risks about $27.99."
+  - **Activity log:** "📏 USDCAD: lot capped at 0.13 by Max lot (risk setting wanted 0.46 lot)…"
+  - The journal records the wanted lot and both risk amounts for each capped trade.
+  - Sizing is unchanged. The cap still applies exactly as before.
+
 ## [1.19.2] - 2026-11-28
 ### Fixed
 - **Keep % of profit modes (Progressive, From entry, From +1R) locked in tighter than tested.** The app moved the stop on every 1-second price, so it jumped to brief spikes inside each minute, and the normal pullback right after closed the trade at a tiny gain. The backtest had moved the stop once a minute.

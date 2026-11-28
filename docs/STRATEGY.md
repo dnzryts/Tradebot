@@ -129,6 +129,10 @@ Stop-loss = entry ∓ ATR × SL-multiple. Take-profit = entry ± ATR × TP-multi
 | **Fingerprint gate** | Enabling the bot on a live account requires biometric confirmation |
 | **Bot tagging** | Bot orders carry the comment `TB <score>`. The bot only manages its own positions, never your manual trades |
 
+## 5b. Lot sizing
+
+ATR mode: **lot = (equity × Risk per trade % × mood) ÷ (stop distance × $ value of one price point for one lot)**, rounded down to the broker's lot step and kept within the broker's min/max lot and **Max lot**. Mood is ×1.25 when the overall market mood strongly agrees with the trade and ×0.6 when it strongly disagrees. When Max lot is lower than the risk-based lot, the trade is **capped**: it risks less than the setting says. Auto-Trade warns about this, capped trades are tagged, and the trade chart shows wanted vs actual risk. Fixed $ mode instead picks the lot so the take-profit is worth the fixed amount.
+
 ## 5a. Trade journal and guardrails
 
 Every trade is journaled when it opens, with its strategy, market type, score, confidence, bigger-trend check, news tone and minutes to the next high-impact event. Its result is attached when it closes: P/L, R (P/L ÷ the amount risked at entry), exit reason and duration. Portfolio → **Bot performance** groups results by symbol, strategy, market type and news state.
