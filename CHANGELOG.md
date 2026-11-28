@@ -1,10 +1,10 @@
 # Changelog
 
-## [1.19.1] - 2026-11-28
+## [1.19.2] - 2026-11-28
 ### Fixed
 - **Keep % of profit modes (Progressive, From entry, From +1R) locked in tighter than tested.** The app moved the stop on every 1-second price, so it jumped to brief spikes inside each minute, and the normal pullback right after closed the trade at a tiny gain. The backtest had moved the stop once a minute.
   - Re-tested with per-second updates, Progressive dropped from **+33R / +14R to +21R / +1.6R**. Standard was almost unchanged at +51R / +18R. Keep 90% from +1R held up at +50R / +20R.
-  - Keep % modes now update the stop **once a minute**, on the price at that moment, matching what was tested. Standard still checks every refresh.
+  - **Progressive** and **From entry** now update the stop **once a minute**, on the price at that moment, matching what was tested. Standard and Keep % **From +1R** still check every refresh, which tested as good or better for them.
   - Nothing else in trading changed. 1.19.0 only changed how market data is fetched.
 
 ## [1.19.0] - 2026-11-28
