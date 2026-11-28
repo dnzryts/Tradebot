@@ -71,7 +71,7 @@ closePosition(id, reason)
 | Loop | Paper | Own VPS | MetaApi |
 |---|---|---|---|
 | Account / positions / history poll | 1 s | 1 s | 5 s (MetaApi bills each request against a credit allowance) |
-| Protect profits check (bot on) | every poll | every poll | every poll |
+| Protect profits check (bot on) | Standard: every poll · Keep % modes: once a minute | same | same |
 | Journal reconcile (open trades only) | every poll | every poll | every poll |
 | Bot cycle (bot on) | `intervalSec` (default 10 s) | `intervalSec` | `intervalSec` |
 | Analysis refresh (bot off) | 6 s | 60 s | 60 s |

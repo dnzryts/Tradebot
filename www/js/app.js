@@ -1923,7 +1923,10 @@
       const tight = S.bot.protectMode === 'tight', keep = S.bot.keepPct || .9, prog = tight && S.bot.keepFrom === 'prog', fromEntry = tight && S.bot.keepFrom !== 'r1';
       if (fromEntry ? gain <= 0 : gain < r * BE_R) continue;
       if (meta[p.id].errT && Date.now() - meta[p.id].errT < 10000) continue;          // broker refused recently: wait 10 s
-      if (tight && meta[p.id].modT && Date.now() - meta[p.id].modT < 2000) continue;  // tight mode: at most one move per 2 s
+      // Keep % modes ratchet on the price sampled once a minute (as backtested). Checking every second chased
+      // brief spikes inside the minute and cut Progressive from +33R / +14R to +21R / +1.6R in the backtest.
+      if (tight && meta[p.id].evalT && Date.now() - meta[p.id].evalT < 60000) continue;
+      if (tight) { meta[p.id].evalT = Date.now(); }
       const d = S.specs?.[p.symbol]?.digits ?? S.digitsOf?.[p.symbol] ?? digits(p.symbol);
       // Stage 1 (from +0.5 R): stop to break-even (entry plus the spread, so a reversal closes at about $0).
       // Stage 2 (from +1 R): stop trails 1 R behind the price. Whichever is higher wins; the stop never moves back.
