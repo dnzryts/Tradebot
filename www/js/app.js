@@ -29,10 +29,13 @@
   const HTF = { '5m': '1h', '15m': '1h', '1h': '4h', '4h': '1d' };
   const TF_MS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
   const FLIP_MIN_BARS = 4, FLIP_MULT = 1.5, SPREAD_MAX = 0.1, TRAIL_R = 1, BE_R = 0.5;
-  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, newsPause: true, protectMode: 'standard', keepPct: 0.9, keepFrom: 'entry', ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
+  const DEFAULT_BOT = { enabled: false, symbols: ['EURUSD', 'GBPUSD', 'XAUUSD', 'BTCUSD'], timeframe: '15m', strategy: 'auto', targetMode: 'atr', tpUsd: 3, slUsd: 3, basketTp: 0, basketSl: 0, maxLot: 1, exitOnFlip: true, intervalSec: 10, newsPause: true, protectMode: 'standard', keepPct: 0.9, keepFrom: 'prog', ...RISK_PRESETS.balanced, profile: 'balanced', botV: 2 };
   const THEMES = { midnight: ['#0b0f1a', '#6c8cff', '#9b6cff'], aurora: ['#04131a', '#19e3c3', '#4f9dff'], gold: ['#0e0c08', '#f2c14e', '#f08a4b'], light: ['#f3f5fb', '#4f6bff', '#8b5cf6'] };
   const AVATAR_COLORS = ['#6c8cff', '#19e3c3', '#f2c14e', '#ff5c7a', '#9b6cff', '#22d3a0'];
 
+  // 1.18: Progressive becomes the Keep % default (settings saved by 1.17.2 hold keepFrom 'entry')
+  const PROG_SLOPE = .5;   // Progressive: keep % = 0.5 × (profit in R), capped at the chosen maximum
+  const keepShare = (gainR, cap) => Math.max(0, Math.min(cap, PROG_SLOPE * gainR));
   const level = () => S.profile?.level || 'pro';
   const atLeast = l => ['beginner', 'moderate', 'pro'].indexOf(level()) >= ['beginner', 'moderate', 'pro'].indexOf(l);
   /* Which tested preset the bot's strategy settings match (null = custom), and what differs. */
@@ -46,7 +49,7 @@
     if (b.trailing && b.protectMode === 'tight') diffs.push('protectMode');
     return { match: diffs.length ? null : match, nearest: match || (RISK_PRESETS[b.profile] ? b.profile : 'balanced'), diffs };
   }
-  const DIFF_LABEL = { timeframe: 'timeframe', threshold: 'entry threshold', minConfidence: 'confidence', slAtr: 'stop-loss', tpAtr: 'take-profit', htfFilter: 'trend filter', exitOnFlip: 'flip exit', trailing: 'protect profits', strategy: 'strategy (tested on Auto)', targetMode: 'fixed $ targets (tested on ATR)', protectMode: 'protect profits set to keep % (tested a little lower)' };
+  const DIFF_LABEL = { timeframe: 'timeframe', threshold: 'entry threshold', minConfidence: 'confidence', slAtr: 'stop-loss', tpAtr: 'take-profit', htfFilter: 'trend filter', exitOnFlip: 'flip exit', trailing: 'protect profits', strategy: 'strategy (tested on Auto)', targetMode: 'fixed $ targets (tested on ATR)', protectMode: 'protect profits set to keep % (tested lower than Standard)' };
   function applyTested(k) {
     if (level() === 'beginner' && k === 'aggressive') k = 'balanced';
     Object.assign(S.bot, RISK_PRESETS[k], { profile: k, strategy: 'auto', targetMode: 'atr', protectMode: 'standard', botV: 2 });
@@ -72,6 +75,7 @@
     tab: 'home', broker: null, account: null, positions: [], history: [], analysis: {}, mood: null,
     pollMs: 0, focus: 'EURUSD', unlocked: false, status: 'Offline', dayStart: store.get('dayStart'),
   };
+  if (S.bot.kfV !== 2) { if (S.bot.keepFrom === 'entry') S.bot.keepFrom = 'prog'; S.bot.kfV = 2; store.set('bot', S.bot); }
   if (S.bot.enabled && S.conn.mode !== 'demo') S.bot.enabled = false; // never auto-resume live trading after restart
 
   /* ---------------- Helpers ---------------- */
@@ -766,7 +770,7 @@
   }
   const NEWS_BUCKET = e => e.ctx?.newsNext != null && e.ctx.newsNext < 240 ? 'High-impact news within 4 h' : 'No big news nearby';
   const GROUPS = { symbol: e => e.sym, strategy: e => e.src === 'manual' ? '✋ Manual' : (Engine.STRATEGIES[e.ctx?.strategy]?.label || e.ctx?.strategy || '—'), regime: e => e.ctx?.regime ? (Engine.REGIME_LABEL[e.ctx.regime] || e.ctx.regime) : '—', news: NEWS_BUCKET,
-    protect: e => !e.ctx?.pm ? 'Not recorded' : e.ctx.pm === 'off' ? 'Off' : e.ctx.pm === 'standard' ? 'Standard' : e.ctx.pm.startsWith('keep:') ? `Keep ${Math.round(+e.ctx.pm.split(':')[1] * 100)}% ${e.ctx.pm.split(':')[2] === 'entry' ? 'from entry' : 'from +1R'}` : `Tight (${e.ctx.pm.split(':')[1]}R)` };
+    protect: e => !e.ctx?.pm ? 'Not recorded' : e.ctx.pm === 'off' ? 'Off' : e.ctx.pm === 'standard' ? 'Standard' : e.ctx.pm.startsWith('keep:') ? (e.ctx.pm.split(':')[2] === 'prog' ? `Progressive (max ${Math.round(+e.ctx.pm.split(':')[1] * 100)}%)` : `Keep ${Math.round(+e.ctx.pm.split(':')[1] * 100)}% ${e.ctx.pm.split(':')[2] === 'entry' ? 'from entry' : 'from +1R'}`) : `Tight (${e.ctx.pm.split(':')[1]}R)` };
   function jGroups(by) {
     const key = by + J.ver + acctKey(); if (J.cache[key]) return J.cache[key];
     const all = J.list.filter(e => e.out && e.acct === acctKey()), g = {};
@@ -832,7 +836,7 @@
     const ev = Brokers.Calendar.upcoming(Brokers.currenciesOf(sym), { from: Date.now(), impacts: ['High'] })[0];
     return { strategy: d?.strategy, regime: a?.regime, score: a?.score, conf: a?.confidence, htf: d ? htfOk(sym, d.action) : null,
       news: S.newsKey ? Brokers.News.forSymbol(sym, S.newsKey) ?? null : null, newsNext: ev ? Math.round((ev.time - Date.now()) / 6e4) : null,
-      pm: !S.bot.trailing ? 'off' : S.bot.protectMode === 'tight' ? 'keep:' + (S.bot.keepPct || .9) + ':' + (S.bot.keepFrom === 'r1' ? 'r1' : 'entry') : 'standard' };
+      pm: !S.bot.trailing ? 'off' : S.bot.protectMode === 'tight' ? 'keep:' + (S.bot.keepPct || .9) + ':' + (S.bot.keepFrom || 'prog') : 'standard' };
   };
 
   /* ---------- News & economic calendar ---------- */
@@ -911,7 +915,13 @@
     const locked = slUsd != null && slUsd >= 0;
     const prog = p.takeProfit ? clamp01((cur - p.openPrice) / (p.takeProfit - p.openPrice)) : null;
     let trail = '';
-    if (bot && S.bot.trailing && S.bot.protectMode === 'tight' && S.bot.keepFrom !== 'r1') {
+    if (bot && S.bot.trailing && S.bot.protectMode === 'tight' && (S.bot.keepFrom || 'prog') === 'prog' && riskUsd) {
+      const cap = S.bot.keepPct || .9, gR = p.profit / riskUsd, f = keepShare(gR, cap), capAt = riskUsd * cap / PROG_SLOPE;
+      trail = `<div class="protect"><div class="title">🔒 Protect profits · progressive${locked ? ' · <span class="up">active</span>' : ''}</div>
+        <div class="sub" style="margin-top:6px">The stop keeps a <b>growing share</b> of the profit: half of the profit in R, up to ${Math.round(cap * 100)}% (reached at ${signed(capAt)}). It moves up only, never back.</div>
+        <div class="keepbar"><i style="width:${(f / cap * 100).toFixed(0)}%"></i></div>
+        <div class="sub">${p.profit > 0 ? `Now ${signed(p.profit)} → keeping <b>${Math.round(f * 100)}%</b> = <b class="up">${signed(p.profit * f)}</b>.` : `Now ${signed(p.profit)}: starts as soon as the trade is in profit.`}${locked ? (slUsd > p.profit * f + .01 ? ` The stop already locks <b class="up">${signed(slUsd)}</b> from when the price was higher; it never moves back.` : ` Stop locks <b class="up">${signed(slUsd)}</b>.`) : ''} Take-profit stays at ${p.takeProfit ? px(sym, p.takeProfit) : '—'}.</div></div>`;
+    } else if (bot && S.bot.trailing && S.bot.protectMode === 'tight' && S.bot.keepFrom !== 'r1') {
       const keep = S.bot.keepPct || .9;
       trail = `<div class="protect"><div class="title">🔒 Protect profits · keep ${Math.round(keep * 100)}% from entry${locked ? ' · <span class="up">active</span>' : ''}</div>
         <div class="sub" style="margin-top:6px">From the first profit, the stop keeps <b>${Math.round(keep * 100)}% of the current profit</b> and moves up with it, never back.${p.profit > 0 ? ` Now ${signed(p.profit)} → keeps ${signed(p.profit * keep)}.` : ` Now ${signed(p.profit)}: starts as soon as the trade is in profit.`}${locked ? ` Stop locks <b class="up">${signed(slUsd)}</b>${Math.abs(slUsd - p.profit * keep) > Math.max(1, p.profit * .05) ? ' (catches up on the next refresh)' : ''}.` : ''} Take-profit stays at ${p.takeProfit ? px(sym, p.takeProfit) : '—'}.</div></div>`;
@@ -1037,9 +1047,11 @@
         <div class="row between" style="margin-bottom:14px"><div><div class="title">Protect profits</div><div class="sub">At half the risk in profit the stop moves to break-even (can no longer lose); at 1× the risk it trails the price by that amount, locking in profit</div></div><label class="toggle"><input type="checkbox" id="trail" ${b.trailing ? 'checked' : ''}><span></span></label></div>
         <div class="${b.trailing ? '' : 'hidden'}" id="pmodebox" style="margin:-4px 0 14px">
           <div class="seg small" id="pmode"><button data-m="standard" class="${b.protectMode !== 'tight' ? 'on' : ''}">Standard (tested best)</button><button data-m="tight" class="${b.protectMode === 'tight' ? 'on' : ''}">Keep % of profit</button></div>
-          <div class="${b.protectMode === 'tight' ? '' : 'hidden'}" id="tightbox"><div class="seg small" id="keeppct" style="margin-top:8px">${[.7, .8, .9].map(x => `<button data-k="${x}" class="${(b.keepPct || .9) === x ? 'on' : ''}">Keep ${Math.round(x * 100)}%</button>`).join('')}</div>
-          <div class="seg small" id="keepfrom" style="margin-top:8px"><button data-f="entry" class="${b.keepFrom !== 'r1' ? 'on' : ''}">From entry</button><button data-f="r1" class="${b.keepFrom === 'r1' ? 'on' : ''}">After break-even, from +1R</button></div>
-          <p class="hint">${b.keepFrom !== 'r1' ? `From the first profit the stop keeps <b>${Math.round((b.keepPct || .9) * 100)}% of the current profit</b> and rises with it, never back: at +$5 it locks ${signed(5 * (b.keepPct || .9))}, at +$41 about ${signed(41 * (b.keepPct || .9))}. <span class="down">In testing this lost money</span> (about −100R where Standard made +52R): small pullbacks close most trades at tiny gains while losing trades stay full size.`
+          <div class="${b.protectMode === 'tight' ? '' : 'hidden'}" id="tightbox"><div class="seg small" id="keeppct" style="margin-top:8px">${[.7, .8, .9].map(x => `<button data-k="${x}" class="${(b.keepPct || .9) === x ? 'on' : ''}">${(b.keepFrom || 'prog') === 'prog' ? 'Up to' : 'Keep'} ${Math.round(x * 100)}%</button>`).join('')}</div>
+          <div class="seg small" id="keepfrom" style="margin-top:8px"><button data-f="prog" class="${(b.keepFrom || 'prog') === 'prog' ? 'on' : ''}">Progressive</button><button data-f="entry" class="${b.keepFrom === 'entry' ? 'on' : ''}">From entry</button><button data-f="r1" class="${b.keepFrom === 'r1' ? 'on' : ''}">From +1R</button></div>
+          <p class="hint">${(b.keepFrom || 'prog') === 'prog' ? (() => { const c = b.keepPct || .9, ex = [.18, .5, 1, 1.44, 2].map(g => `+$${Math.round(28.49 * g)} → ${Math.round(keepShare(g, c) * 100)}%`).join(', ');
+              return `From the first profit, the stop keeps a <b>growing share</b> of it: half of the profit in R, up to <b>${Math.round(c * 100)}%</b>. Room early, tight once well ahead, never moves back. On a $28.49-risk trade: ${ex}. Tested: <b>+33R / +14R</b> (90% max), against −100R / −58R for a flat 90% from entry and +52R / +18R for Standard.`; })()
+            : b.keepFrom !== 'r1' ? `From the first profit the stop keeps <b>${Math.round((b.keepPct || .9) * 100)}% of the current profit</b> and rises with it, never back: at +$5 it locks ${signed(5 * (b.keepPct || .9))}, at +$41 about ${signed(41 * (b.keepPct || .9))}. <span class="down">In testing this lost money</span> (about −100R where Standard made +52R): small pullbacks close most trades at tiny gains while losing trades stay full size.`
             : `At +0.5R the stop goes to break-even. From +1R it keeps <b>${Math.round((b.keepPct || .9) * 100)}% of the current profit</b>: at +$41 it locks about ${signed(41 * (b.keepPct || .9))}. Tested: +44R / +17R against +52R / +18R for Standard.`} Compare in Portfolio → Bot performance → Protect.</p></div></div>
         <div class="row between"><div><div class="title">Exit when sentiment flips</div><div class="sub">Close a bot trade when sentiment turns strongly against it (after ${FLIP_MIN_BARS}+ candles)</div></div><label class="toggle"><input type="checkbox" id="flip" ${b.exitOnFlip ? 'checked' : ''}><span></span></label></div>
       </div></div>
@@ -1079,10 +1091,10 @@
     $('#guardon').onchange = e => { (S.bot.guard ||= { on: true, paused: {}, since: {} }).on = e.target.checked; save(); if (e.target.checked) checkGuardrails(); };
     $('#npause').onchange = e => { b.newsPause = e.target.checked; save(); log(b.newsPause ? 'Pause around high-impact news: on' : 'Pause around high-impact news: off'); };
     $$('#pmode button').forEach(x => x.onclick = async () => {
-      if (x.dataset.m === 'tight' && b.protectMode !== 'tight' && !(await ask({ title: 'Keep a % of profit?', message: 'The stop keeps a share of the current profit and rises with it. It locks in more on each trade but closes many trades before their take-profit: in testing, keeping 90% from entry lost money, and from +1R made a little less than Standard.', ok: 'Use it', ic: 'shield' }))) return;
+      if (x.dataset.m === 'tight' && b.protectMode !== 'tight' && !(await ask({ title: 'Keep a % of profit?', message: 'The stop keeps a share of the current profit and rises with it. Progressive (the default here) keeps a growing share and tested at +33R / +14R; a flat 90% from entry lost money; Standard made the most (+52R / +18R).', ok: 'Use it', ic: 'shield' }))) return;
       b.protectMode = x.dataset.m; save(); log(`Protect profits mode: ${b.protectMode === 'tight' ? `keep ${Math.round((b.keepPct || .9) * 100)}% of profit` : 'Standard'}`); viewBot(v); });
     $$('#keeppct button').forEach(x => x.onclick = () => { b.keepPct = +x.dataset.k; save(); viewBot(v); });
-    $$('#keepfrom button').forEach(x => x.onclick = () => { b.keepFrom = x.dataset.f; save(); log(`Keep ${Math.round((b.keepPct || .9) * 100)}% of profit: ${b.keepFrom === 'r1' ? 'after break-even, from +1R' : 'from entry'}`); viewBot(v); });
+    $$('#keepfrom button').forEach(x => x.onclick = () => { b.keepFrom = x.dataset.f; b.kfV = 2; save(); log(`Keep % of profit: ${({ prog: `progressive, up to ${Math.round((b.keepPct || .9) * 100)}%`, entry: `${Math.round((b.keepPct || .9) * 100)}% from entry`, r1: 'after break-even, from +1R' })[b.keepFrom]}`); viewBot(v); });
     $('#trail').onchange = e => { b.trailing = e.target.checked; $('#pmodebox').classList.toggle('hidden', !b.trailing); save(); log(b.trailing ? 'Protect profits on (trailing stop)' : 'Protect profits off'); };
     $('#htf').onchange = e => { b.htfFilter = e.target.checked; save(); analyseAll(); };
     bindTested(v);
@@ -1835,7 +1847,7 @@
     for (const p of mine) {
       const r = meta[p.id]?.r, price = p.currentPrice; if (!r || !price) continue;
       const dir = p.type === 'POSITION_TYPE_BUY' ? 1 : -1, gain = (price - p.openPrice) * dir;
-      const tight = S.bot.protectMode === 'tight', keep = S.bot.keepPct || .9, fromEntry = tight && S.bot.keepFrom !== 'r1';
+      const tight = S.bot.protectMode === 'tight', keep = S.bot.keepPct || .9, prog = tight && S.bot.keepFrom === 'prog', fromEntry = tight && S.bot.keepFrom !== 'r1';
       if (fromEntry ? gain <= 0 : gain < r * BE_R) continue;
       if (meta[p.id].errT && Date.now() - meta[p.id].errT < 10000) continue;          // broker refused recently: wait 10 s
       if (tight && meta[p.id].modT && Date.now() - meta[p.id].modT < 2000) continue;  // tight mode: at most one move per 2 s
@@ -1846,7 +1858,10 @@
       sp = meta[p.id].sp;
       const be = p.openPrice + dir * sp;
       let target, stage;
-      if (fromEntry) {   // Keep % from entry: from the first profit the stop always keeps e.g. 90% of the current profit
+      if (prog) {        // Progressive: keeps a growing share of the profit: 0.5 × profit-in-R, up to the cap (e.g. 90% from +1.8R)
+        const f = keepShare(gain / r, keep); if (f <= 0) continue;
+        target = p.openPrice + dir * gain * f; stage = 3;
+      } else if (fromEntry) {   // Keep % from entry: from the first profit the stop always keeps e.g. 90% of the current profit
         target = p.openPrice + dir * gain * keep; stage = 3;
       } else if (tight) {   // Keep % from +1R: break-even from +0.5 R, then from +1 R the stop keeps a share of the current profit
         const t = gain >= r * TRAIL_R ? p.openPrice + dir * gain * keep : null;
@@ -1861,7 +1876,7 @@
         await S.broker.modifyPosition(p.id, { stopLoss: sl, takeProfit: p.takeProfit });
         const locked = p.profit * ((sl - p.openPrice) * dir) / gain;
         meta[p.id].stage = stage; meta[p.id].modT = Date.now(); meta[p.id].errT = 0; store.set('posMeta', meta);
-        if (stage === 3) { if (!meta[p.id].tLog || Date.now() - meta[p.id].tLog > 60000) { meta[p.id].tLog = Date.now(); log(`🔒 ${p.symbol}: stop at ${px(p.symbol, sl)}, keeping ${Math.round(keep * 100)}% of profit (locks ${signed(locked)})`, 'up'); } continue; }
+        if (stage === 3) { if (!meta[p.id].tLog || Date.now() - meta[p.id].tLog > 60000) { meta[p.id].tLog = Date.now(); log(`🔒 ${p.symbol}: stop at ${px(p.symbol, sl)}, keeping ${Math.round((prog ? keepShare(gain / r, keep) : keep) * 100)}% of profit (locks ${signed(locked)})`, 'up'); } continue; }
         log(stage === 1 ? `🔒 ${p.symbol}: up ${fmt(gain / r, 2)}R, stop moved to break-even ${px(p.symbol, sl)}: this trade can no longer lose` : `🔒 ${p.symbol}: stop trailing at ${px(p.symbol, sl)} (locks ${signed(locked)})`, 'up');
       } catch (e) {
         if (/404|not found/i.test(e.message) && S.conn.mode === 'bridge') { S._noModify = true; log('Protect profits needs bridge 1.3.0: re-run install.ps1 on your VPS', 'down'); return; }

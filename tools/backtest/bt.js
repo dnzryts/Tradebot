@@ -51,11 +51,12 @@ function run(cfg) {
         if (buy ? lo <= pos.sl : hi >= pos.sl) { exit = pos.sl; why = 'SL'; }
         else if (buy ? hi >= pos.tp : lo <= pos.tp) { exit = pos.tp; why = 'TP'; }
         if (exit != null) { close(exit, why, b.time); }
-        else if (c.breakEvenR || c.trailR || c.trailDist || c.lockPct) {
+        else if (c.breakEvenR || c.trailR || c.trailDist || c.lockPct || c.progMax) {
           const mark = buy ? b.close : b.close + sp, r = pos.risk;
           const gain = (mark - pos.entry) * pos.side;
           if (c.breakEvenR && gain >= c.breakEvenR * r) { const be = pos.entry + pos.side * sp; if (buy ? be > pos.sl : be < pos.sl) pos.sl = be; }
           if (c.trailR && gain >= c.trailR * r) { const t = mark - pos.side * c.trailR * r; if (buy ? t > pos.sl : t < pos.sl) pos.sl = t; }
+          if (c.progMax && gain > 0) { const f = Math.min(c.progMax, (c.progBase || 0) + (c.progSlope || 1) * gain / r); if (f > 0 && gain * f >= sp) { const t = pos.entry + pos.side * gain * f; if (buy ? t > pos.sl : t < pos.sl) pos.sl = t; } }
           if (c.lockPct && gain >= (c.lockStart || 0) * r && gain * c.lockPct >= sp) { const t = pos.entry + pos.side * gain * c.lockPct; if (buy ? t > pos.sl : t < pos.sl) pos.sl = t; }
           if (c.trailDist && gain >= (c.trailStart || 0) * r && gain > 0) { const t = mark - pos.side * c.trailDist * r; if (buy ? t > pos.sl : t < pos.sl) pos.sl = t; }
         }

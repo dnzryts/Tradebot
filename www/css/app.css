@@ -531,3 +531,5 @@ html.bars-hidden body::before { display: none; }
 .protect .pstep.now b:first-child { background: var(--warn); color: #fff; }
 .protect .pstep.done, .protect .pstep.now { color: var(--text); }
 .protect .sub { margin-top: 8px; }
+.protect .keepbar { height: 6px; border-radius: 3px; background: var(--card); margin: 10px 0 6px; overflow: hidden; }
+.protect .keepbar i { display: block; height: 100%; border-radius: 3px; background: var(--up); transition: width .4s; }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.18.0] - 2026-11-28
+### Added
+- **Progressive profit lock**, now the default for Keep % of profit. From the first profit, the stop keeps a **growing share** of it: half of the profit measured in R, up to the chosen maximum (90% by default). Trades get room while the profit is small and are locked in tightly once well ahead. The stop never moves back.
+  - On a trade risking $28.49:
+    - +$5 keeps 9%
+    - +$14 keeps 25%
+    - +$28 keeps 50%
+    - +$41 keeps 72%
+    - +$51 and above keeps 90%
+  - Backtest with the Balanced preset over 16 months of real prices: **+33R / +14R** with a 78% win rate. A flat 90% from entry made −100R / −58R, with a 92% win rate but tiny wins. Standard made +52R / +18R.
+  - Settings that were "Keep 90% from entry" switch to Progressive (up to 90%) automatically. "From entry" and "From +1R" are still available.
+  - The trade chart shows a bar for how much of the maximum share is being kept, and the live figure, e.g. "Now +$33.51 → keeping 59% = +$19.69". If the price has pulled back, it says the stop already locks more from earlier.
+- The journal records Progressive trades separately ("Progressive (max 90%)") for **Portfolio → Bot performance → Protect**.
+
 ## [1.17.2] - 2026-11-28
 ### Changed
 - **Keep % of profit now follows from entry by default.** From the first profit, the stop keeps 90% (or 70% / 80%) of the current profit and moves up with it, never back. There's no fixed break-even stage first. For example, at +$5 it locks +$4.50, and at +$41 about +$36.90.
