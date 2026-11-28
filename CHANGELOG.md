@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.18.1] - 2026-11-28
+### Added
+- **Lock speed for the Progressive profit lock:** Slower, Normal (default) or Faster. It sets how quickly the kept share grows: 0.35, 0.5 or 0.65 × the profit in R, up to the 70/80/90% cap.
+  - Faster, on a trade risking $28.49: +$14 keeps 33%, +$28 keeps 65%, and 90% from +$39.
+  - Backtest with the Balanced preset, Jun 2025–May 2026 / Jan–May 2025:
+    - Slower: +26R / +23R
+    - **Normal: +33R / +14R**
+    - Faster: +30R / +5R
+  - Even faster ramps were tested and left out: 0.75 gave +29R / −0.5R, 1.0 gave +10R / −12R, and a 20% head start gave −22R / −9R. They win more often, but each win is smaller.
+  - The trade chart shows the speed ("progressive (faster)") and uses it for the live figures. The journal records it, so **Bot performance → Protect** compares the speeds.
+- The Protect profits description in settings now matches the selected mode.
+
 ## [1.18.0] - 2026-11-28
 ### Added
 - **Progressive profit lock**, now the default for Keep % of profit. From the first profit, the stop keeps a **growing share** of it: half of the profit measured in R, up to the chosen maximum (90% by default). Trades get room while the profit is small and are locked in tightly once well ahead. The stop never moves back.
