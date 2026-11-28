@@ -61,7 +61,7 @@
     S.profile.level = lv; const b = S.bot;
     if (lv === 'beginner') { b.newsPause = true; applyTested(['conservative', 'balanced'].includes(b.profile) ? b.profile : 'conservative'); Object.assign(b, { basketTp: 0, basketSl: 0, intervalSec: 10 }); }
     if (lv === 'moderate' && b.timeframe === '5m') b.timeframe = '15m';
-    save(); S.candleCache = {};
+    save(); S.candleCache = {}; resetSeries();
   }
   const S = {
     profile: store.get('profile'),               // {name, email, pinHash, biometric, riskProfile, color, created}
@@ -898,7 +898,7 @@
     S.specs ||= {};
     try {
       if (!S.specs[p.symbol]) S.specs[p.symbol] = await S.broker.getSpec(p.symbol);
-      if (!S.candleCache[p.symbol]) S.candleCache[p.symbol] = await S.broker.getCandles(p.symbol, S.bot.timeframe, 200);
+      if (!S.candleCache[p.symbol]) S.candleCache[p.symbol] = await getSeries(p.symbol, S.bot.timeframe);
     } catch { }
     if (document.body.contains(bg)) tradeSheetUpdate();
   }
@@ -1027,7 +1027,7 @@
     v.innerHTML = `<div class="screen">${topbar('Auto-Trade')}
       <div class="card" id="botstat" data-view="bot">${botStatusHtml()}</div>
       ${isLive() ? '<div class="notice" style="margin-bottom:12px"><b>Live account.</b> The bot places real orders with real money. Automated strategies can and do lose. Start small and watch it closely.</div>' : ''}
-      <h3>Strategy radar</h3><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
+      <h3>Strategy radar</h3><div id="datahealth" style="margin:-4px 0 8px">${dataHealthHtml()}</div><div class="card" id="radar" data-view="radar">${radarHtml()}</div>
       <div class="card tested" id="tested" data-view="tested">${testedHtml()}</div>
       ${guardCardHtml()}
       <div class="lockbar ${S.settingsUnlocked ? 'open' : ''}" id="lockbar"><div><b id="lockt">${S.settingsUnlocked ? '🔓 Editing settings' : '🔒 Settings locked'}</b><div class="sub" id="locks">${S.settingsUnlocked ? 'Lock again when you are done' : 'Prevents accidental changes while scrolling'}</div></div><button class="btn small ${S.settingsUnlocked ? '' : 'ghost'}" id="lockbtn">${S.settingsUnlocked ? 'Lock' : 'Unlock to edit'}</button></div>
@@ -1089,9 +1089,9 @@
     $('#bottoggle').onchange = e => toggleBot(e.target.checked);
     $$('#strat button').forEach(x => x.onclick = () => { b.strategy = x.dataset.st; save(); $$('#strat button').forEach(y => y.classList.toggle('on', y === x)); paint($('#radar'), radarHtml(), 'radar'); log(`Strategy set to ${Engine.STRATEGIES[b.strategy].label}`); });
     bindPositions(v);
-    $$('#preset button').forEach(x => x.onclick = () => { applyTested(x.dataset.k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
+    $$('#preset button').forEach(x => x.onclick = () => { applyTested(x.dataset.k); save(); S.candleCache = {}; resetSeries(); analyseAll(); viewBot(v); toast(`${RISK_PRESETS[x.dataset.k].label} profile applied`); });
     $$('#syms button').forEach(x => x.onclick = () => { const s = x.dataset.s; b.symbols = b.symbols.includes(s) ? b.symbols.filter(y => y !== s) : [...b.symbols, s]; x.classList.toggle('on'); save(); });
-    $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; save(); analyseAll(); });
+    $$('#tf button').forEach(x => x.onclick = () => { b.timeframe = x.dataset.t; b.profile = 'custom'; $$('#preset button').forEach(y => y.classList.remove('on')); $$('#tf button').forEach(y => y.classList.toggle('on', y === x)); $('#tfhint').innerHTML = tfHint(); $('#htfsub').textContent = `Only buy when the ${HTF[b.timeframe]} trend is up, only sell when it is down`; S.candleCache = {}; resetSeries(); save(); analyseAll(); });
     $('#guardon').onchange = e => { (S.bot.guard ||= { on: true, paused: {}, since: {} }).on = e.target.checked; save(); if (e.target.checked) checkGuardrails(); };
     $('#npause').onchange = e => { b.newsPause = e.target.checked; save(); log(b.newsPause ? 'Pause around high-impact news: on' : 'Pause around high-impact news: off'); };
     $$('#pmode button').forEach(x => x.onclick = async () => {
@@ -1160,7 +1160,7 @@
     const r = $('#resettested'); if (r) r.onclick = async () => {
       const k = testedState().nearest;
       if (!(await ask({ title: `Reset to tested ${RISK_PRESETS[k].label}?`, message: 'Timeframe, entry rules, stops, trend filter and flip exit go back to the backtested values. Strategy becomes Auto and targets follow volatility (ATR). Your symbols stay as they are.', ok: 'Reset', ic: 'bot' }))) return;
-      applyTested(k); save(); S.candleCache = {}; analyseAll(); viewBot(v); toast(`Tested ${RISK_PRESETS[k].label} settings applied`); log(`Reset to tested ${RISK_PRESETS[k].label} settings`);
+      applyTested(k); save(); S.candleCache = {}; resetSeries(); analyseAll(); viewBot(v); toast(`Tested ${RISK_PRESETS[k].label} settings applied`); log(`Reset to tested ${RISK_PRESETS[k].label} settings`);
     };
   }
   function refreshTested() { const t = S.tab === 'bot' && document.getElementById('tested'); if (t) { paint(t, testedHtml(), 'tested'); bindTested($('#view')); } }
@@ -1643,7 +1643,7 @@
   };
   S.candleCache = {};
   async function connectBroker(onStatus) {
-    S.broker?.destroy?.(); S.status = 'Connecting';
+    S.broker?.destroy?.(); S.status = 'Connecting'; S.candleCache = {}; resetSeries(); D.stat = {}; S.htf = {};
     if (S.conn.mode === 'bridge') {
       S.broker = new Brokers.BridgeBroker({ url: S.conn.url, token: await Security.getSecret('bridge') });
       try {
@@ -1664,7 +1664,7 @@
     }
     S.pollMs = S.conn.mode === 'mt5' ? 5000 : 1000;
     if (pollT) { clearInterval(pollT); pollT = setInterval(poll, S.pollMs); }
-    S.candleCache = {}; await poll(); await analyseAll(); scheduleBot(true);
+    S.candleCache = {}; resetSeries(); await poll(); await analyseAll(); scheduleBot(true);
   }
   async function poll() {
     if (!S.broker || S._polling) return;           // skip a beat rather than overlap if the last refresh is still running
@@ -1695,14 +1695,81 @@
   }
   const todayPnl = () => S.account && S.dayStart ? S.account.equity - S.dayStart.equity : 0;
 
+  /* ===================== Market data loader =====================
+     Keeps broker load flat as the number of symbols grows (see docs/ARCHITECTURE.md → Market data loading).
+       • Request queue: at most N broker data requests at once (MetaApi 4, below its 5-per-account limit on
+         historical data; Own VPS 2, since the bridge serves MT5 one call at a time; Paper unlimited).
+       • Incremental candles: 200 candles once per symbol/timeframe (and every 6 h to self-heal), then only the
+         last 3, merged in by candle time.
+       • Due times: a symbol is refreshed only when due, every tf/15 between 20 s and 2 min on live accounts
+         (15m → 60 s), every scan on Paper, and each symbol's slot is staggered so they don't all fire together.
+       • Health: per-symbol last success / consecutive failures, shown on Auto-Trade.
+     The analysis and the bot's decisions are unchanged: same 200 closed+forming candles, same engine. */
+  const D = { q: [], active: 0, store: {}, stat: {} };
+  const poolSize = () => S.conn?.mode === 'mt5' ? 4 : S.conn?.mode === 'bridge' ? 2 : 64;
+  function queued(fn) {
+    return new Promise((res, rej) => { D.q.push([fn, res, rej]); pump(); });
+  }
+  function pump() {
+    while (D.active < poolSize() && D.q.length) {
+      const [fn, res, rej] = D.q.shift(); D.active++;
+      Promise.resolve().then(fn).then(res, rej).finally(() => { D.active--; pump(); });
+    }
+  }
+  const TFMS = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
+  const dueEvery = tf => S.conn?.mode === 'demo' ? 0 : Math.max(2e4, Math.min(12e4, (TFMS[tf] || 9e5) / 15));
+  const FULL_EVERY = 6 * 36e5, FULL_N = 200, INC_N = 3;
+  D.reqs = { full: 0, inc: 0, fail: 0 };   // counters (Profile → About shows them; tests read them)
+  /* Candles for sym/tf, refreshed only when due. Returns the cached series (possibly stale) or throws if none. */
+  async function getSeries(sym, tf, { n = FULL_N, slot = 0, of = 1 } = {}) {
+    const key = sym + '|' + tf, c = D.store[key], now = Date.now(), every = dueEvery(tf);
+    if (c && now < c.due) return c.k;
+    const full = !c || c.k.length < 60 || now - c.fullAt > FULL_EVERY || c.tf !== tf;
+    try {
+      let fresh = await queued(() => S.broker.getCandles(sym, tf, full ? n : INC_N)), wasFull = full;
+      if (!Array.isArray(fresh) || !fresh.length) throw new Error('no candles');
+      // gap check: if the 3 newest candles don't overlap what we have (app was asleep), download the full series
+      if (!full && fresh[0].time > c.k.at(-1).time) { fresh = await queued(() => S.broker.getCandles(sym, tf, n)); wasFull = true; D.reqs.gapFix = (D.reqs.gapFix || 0) + 1; }
+      let k;
+      if (wasFull) k = fresh;
+      else {   // merge by time: replace the forming candle, append new ones
+        k = c.k.slice(); const last = k.at(-1).time;
+        fresh.forEach(x => { if (x.time > last) k.push(x); else { const i = k.findIndex(y => y.time === x.time); if (i >= 0) k[i] = x; } });
+        if (k.length > n) k = k.slice(-n);
+      }
+      // stagger: symbol #slot of #of gets its own offset inside the refresh window
+      D.store[key] = { k, tf, fullAt: wasFull ? now : c.fullAt, due: now + every * (1 + (of > 1 ? slot / of * .5 : 0)) };
+      D.reqs[wasFull ? 'full' : 'inc']++;
+      const st = (D.stat[sym] ||= {}); st.ok = now; st.fails = 0; st.err = '';
+      return k;
+    } catch (e) {
+      D.reqs.fail++;
+      const st = (D.stat[sym] ||= {}); st.fails = (st.fails || 0) + 1; st.err = e.message || String(e);
+      if (c) { c.due = now + Math.min(6e4, 5e3 * st.fails); return c.k; }   // keep the last good data, retry with backoff
+      throw e;
+    }
+  }
+  function resetSeries() { D.store = {}; }
+  /* Auto-Trade status line: how many watched symbols are up to date. */
+  function dataHealthHtml() {
+    const w = watch(), now = Date.now(), lim = Math.max(dueEvery(S.bot.timeframe) * 2.5, 6e4);
+    const ok = w.filter(x => D.stat[x]?.ok && now - D.stat[x].ok < lim && !(D.stat[x].fails >= 3)), bad = w.filter(x => D.stat[x]?.fails >= 3);
+    const last = Math.max(0, ...w.map(x => D.stat[x]?.ok || 0));
+    if (!last) return '<span class="sub">Loading market data…</span>';
+    return `<span class="sub">${ok.length === w.length ? '✅' : '⚠️'} ${ok.length} of ${w.length} symbols up to date · last update ${relTime(last).replace('in ', '')}${S.conn?.mode !== 'demo' ? ` · refresh every ${Math.round(dueEvery(S.bot.timeframe) / 1000)} s, up to ${poolSize()} at a time` : ''}</span>
+      ${bad.length ? `<div class="sub down" style="margin-top:4px">Not updating: ${bad.map(x => `${x} (${esc(D.stat[x].err).slice(0, 60)})`).join(', ')}. The bot skips these until data comes back.</div>` : ''}`;
+  }
   async function analyseAll() {
     if (!S.broker) return;
     const syms = [...new Set([...watch(), ...(S.tab === 'markets' ? (S.marketVisible || []).slice(0, 30) : [])])];
     await Promise.all([Brokers.Calendar.refresh(), Brokers.News.refresh(S.newsKey)]).catch(() => { });
-    await Promise.all(syms.map(async s => {
+    const W = watch();
+    await Promise.all(syms.map(async (s, i) => {
       try {
-        const c = await S.broker.getCandles(s, S.bot.timeframe, 200); S.candleCache[s] = c;
-        if (S.conn.mode !== 'demo' && !(s in (S.digitsOf ||= {}))) { try { S.digitsOf[s] = (await S.broker.getSpec(s)).digits; } catch { } }
+        const c = await getSeries(s, S.bot.timeframe, { slot: i, of: syms.length });
+        if (S.candleCache[s] === c && S.analysis[s]) return;      // nothing new since the last analysis
+        S.candleCache[s] = c;
+        if (S.conn.mode !== 'demo' && !(s in (S.digitsOf ||= {}))) { try { S.digitsOf[s] = (await queued(() => S.broker.getSpec(s))).digits; } catch { } }
         const news = Brokers.News.forSymbol(s, S.newsKey);
         S.analysis[s] = Engine.analyse(c, { threshold: S.bot.threshold, news });
         // The bot decides on CLOSED candles only: the last candle is still forming and its
@@ -1710,10 +1777,11 @@
         const done = c.slice(0, -1);
         (S.botAnalysis ||= {})[s] = Engine.analyse(done, { threshold: S.bot.threshold, news });
         (S.barKey ||= {})[s] = done.at(-1)?.time;
-        if (S.bot.htfFilter && watch().includes(s)) await loadHtf(s);
+        if (S.bot.htfFilter && W.includes(s)) await loadHtf(s);
       } catch (e) { /* symbol unavailable */ }
     }));
     S.mood = Engine.marketMood(watch().map(s => S.analysis[s]));
+    const dh = document.getElementById('datahealth'); if (dh) dh.innerHTML = dataHealthHtml();
     refreshLive();
   }
 
@@ -1722,7 +1790,7 @@
     const tf = HTF[S.bot.timeframe] || '1h', key = sym + tf, c = (S.htf ||= {})[key];
     if (c && Date.now() - c.t < 3e5) return;
     try {
-      const k = (await S.broker.getCandles(sym, tf, 120)).slice(0, -1), a = Engine.analyse(k, {});
+      const k = (await queued(() => S.broker.getCandles(sym, tf, 120))).slice(0, -1), a = Engine.analyse(k, {});
       S.htf[key] = { t: Date.now(), up: a ? a.ema20 > a.ema50 : null };
     } catch { S.htf[key] = { t: Date.now(), up: null }; }
   }
@@ -1917,5 +1985,5 @@
 
   applyTheme(); applyHero(); applyFullscreen();
   render();
-  window.Tradebot = S; window.TradebotJournal = J; // debugging
+  window.Tradebot = S; window.TradebotJournal = J; window.TradebotData = D; // debugging
 })();

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0] - 2026-11-28
+### Changed
+- **Watching many symbols no longer overloads the broker connection.** The bot's decisions are unchanged. Only how market data is fetched has changed. Full design in `docs/ARCHITECTURE.md` → *Market data loading and scaling*.
+  - **Request queue:** at most 4 candle downloads at once on MetaApi (its limit is 5 per account), 2 on Own VPS, unlimited on Paper. Before, every symbol was requested at the same moment. With 12 symbols on MetaApi, 7 were refused on each scan and silently skipped.
+  - **Incremental candles:** the full 200 candles download once (and every 6 h), then only the last 3, merged in by time. If the app was asleep and more candles closed, it downloads the full series again. Verified: merged data is identical to a fresh download, with the same scores.
+  - **Only when due:** on live accounts a symbol refreshes every timeframe ÷ 15 (15m → 60 s, 1h → 2 min, 5m → 20 s). Each symbol gets its own slot, so requests trickle instead of bursting. Before, the same 200 candles were re-downloaded on every 10-second scan.
+  - Measured with 12 symbols on a simulated MetaApi connection, 3 minutes of scans: **31 requests (16 full + 15 small), 0 refused, 12 of 12 analysed**. The old pattern needed about 216 full downloads.
+- **Data status above the strategy radar**, e.g. "✅ 12 of 12 symbols up to date · last update 4 s ago · refresh every 60 s, up to 4 at a time". Symbols failing 3 times in a row are listed as "Not updating" with the reason, and the bot skips them until data returns. Failed downloads keep the last good data and retry with back-off.
+
+### Docs
+- `docs/ARCHITECTURE.md` brought up to date: runtime loops, the broker interface (`modifyPosition`, `getCatalog`), news and calendar, storage keys, and the new data-loading design with capacity guidance (MetaApi about 10–20 symbols on 15m, Own VPS about 20, Paper unlimited). Also kept in the project as *tradebot-architecture.md*.
+
 ## [1.18.1] - 2026-11-28
 ### Added
 - **Lock speed for the Progressive profit lock:** Slower, Normal (default) or Faster. It sets how quickly the kept share grows: 0.35, 0.5 or 0.65 × the profit in R, up to the 70/80/90% cap.
